@@ -1,5 +1,10 @@
 'use client';
 
+// 静态导出需要这个函数 (返回空数组表示所有路由在客户端动态处理)
+export function generateStaticParams() {
+  return [];
+}
+
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import DocumentList from '@/components/DocumentList';
