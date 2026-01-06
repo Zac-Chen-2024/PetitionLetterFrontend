@@ -1,2 +1,0 @@
-:HL["/PetitionLetterFrontend/_next/static/chunks/4328de04fba38990.css","style"]
-0:{"buildId":"Mug2NHmoO0HYFr06OQoNH","tree":{"name":"","paramType":null,"paramKey":"","hasRuntimePrefetch":false,"slots":{"children":{"name":"__PAGE__","paramType":null,"paramKey":"__PAGE__","hasRuntimePrefetch":false,"slots":null,"isRootLayout":false}},"isRootLayout":true},"staleTime":300}
