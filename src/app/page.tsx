@@ -8,7 +8,7 @@ import type { Document, Quote } from '@/types';
 // VERSION INFO
 // ============================================================================
 const VERSION = '0.1.1';
-const BUILD_TIME = '2025-01-12 10:20 EST';
+const BUILD_TIME = process.env.NEXT_PUBLIC_BUILD_TIME || 'development';
 
 // ============================================================================
 // ICONS
