@@ -5,6 +5,12 @@ import { projectApi, documentApi, analysisApi, ocrApi, highlightApi, type Projec
 import type { Document, Quote } from '@/types';
 
 // ============================================================================
+// VERSION INFO
+// ============================================================================
+const VERSION = '0.1.1';
+const BUILD_TIME = '2025-01-12 10:20 EST';
+
+// ============================================================================
 // ICONS
 // ============================================================================
 const Icons = {
@@ -153,6 +159,11 @@ export default function App() {
   // EFFECTS
   // ============================================================================
   useEffect(() => {
+    console.log(
+      `%cPetitionLetter Frontend v${VERSION}%c\nBuild: ${BUILD_TIME} (New York Time)`,
+      'color: #2563EB; font-size: 14px; font-weight: bold;',
+      'color: #64748B; font-size: 12px;'
+    );
     loadProjects();
     checkBackendStatus();
   }, []);
