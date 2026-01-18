@@ -15,9 +15,141 @@ interface UploadingFile {
   exhibitNumber: string;
   status: 'pending' | 'uploading' | 'completed' | 'failed';
   error?: string;
-  progress?: number;  // Upload progress 0-100
-  uploadedBytes?: number;
-  totalBytes?: number;
+  progress: number;  // Upload progress 0-100
+}
+
+// 上传进度 Modal 组件
+function UploadProgressModal({
+  files,
+  onClose,
+  isUploading,
+}: {
+  files: UploadingFile[];
+  onClose: () => void;
+  isUploading: boolean;
+}) {
+  const completedCount = files.filter(f => f.status === 'completed').length;
+  const failedCount = files.filter(f => f.status === 'failed').length;
+  const totalCount = files.length;
+  const overallProgress = totalCount > 0
+    ? Math.round(files.reduce((sum, f) => sum + (f.progress || 0), 0) / totalCount)
+    : 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl w-full max-w-lg mx-4 overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-gray-200 bg-gray-50">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold text-gray-900">
+              {isUploading ? '正在上传文件...' : '上传完成'}
+            </h3>
+            {!isUploading && (
+              <button
+                onClick={onClose}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Overall progress */}
+        <div className="px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm text-gray-600">总进度</span>
+            <span className="text-lg font-bold text-blue-600">{overallProgress}%</span>
+          </div>
+          <div className="h-3 bg-gray-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-out"
+              style={{ width: `${overallProgress}%` }}
+            />
+          </div>
+          <div className="mt-2 text-xs text-gray-500">
+            已完成 {completedCount} / {totalCount} 个文件
+            {failedCount > 0 && <span className="text-red-500 ml-2">({failedCount} 个失败)</span>}
+          </div>
+        </div>
+
+        {/* File list */}
+        <div className="px-6 py-4 max-h-64 overflow-y-auto">
+          <div className="space-y-3">
+            {files.map((item, index) => (
+              <div key={index} className="flex items-center gap-3">
+                {/* Status icon */}
+                <div className="flex-shrink-0 w-6 h-6 flex items-center justify-center">
+                  {item.status === 'uploading' ? (
+                    <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                  ) : item.status === 'completed' ? (
+                    <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                      </svg>
+                    </div>
+                  ) : item.status === 'failed' ? (
+                    <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+                      <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </div>
+                  ) : (
+                    <div className="w-5 h-5 bg-gray-300 rounded-full" />
+                  )}
+                </div>
+
+                {/* File info and progress */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm text-gray-800 truncate" title={item.file.name}>
+                      {item.exhibitNumber}: {item.file.name}
+                    </span>
+                    <span className={`text-sm font-medium ml-2 ${
+                      item.status === 'completed' ? 'text-green-600' :
+                      item.status === 'failed' ? 'text-red-600' :
+                      item.status === 'uploading' ? 'text-blue-600' : 'text-gray-400'
+                    }`}>
+                      {item.status === 'completed' ? '完成' :
+                       item.status === 'failed' ? '失败' :
+                       item.status === 'uploading' ? `${item.progress}%` : '等待中'}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full rounded-full transition-all duration-300 ${
+                        item.status === 'completed' ? 'bg-green-500' :
+                        item.status === 'failed' ? 'bg-red-500' : 'bg-blue-500'
+                      }`}
+                      style={{ width: `${item.progress}%` }}
+                    />
+                  </div>
+                  {item.status === 'failed' && item.error && (
+                    <p className="text-xs text-red-500 mt-1 truncate">{item.error}</p>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer */}
+        {!isUploading && (
+          <div className="px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <button
+              onClick={onClose}
+              className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
+            >
+              确定
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // Available folders
@@ -34,6 +166,8 @@ export default function FileUploader({
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState('A');
   const [nextNumber, setNextNumber] = useState(1);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Handle file selection
@@ -55,6 +189,7 @@ export default function FileUploader({
         file,
         exhibitNumber: `${selectedFolder}-${currentNumber}`,
         status: 'pending',
+        progress: 0,
       });
       currentNumber++;
     }
@@ -101,6 +236,10 @@ export default function FileUploader({
   const uploadAll = async () => {
     const pendingFiles = uploadingFiles.filter(f => f.status === 'pending');
     if (pendingFiles.length === 0) return;
+
+    // 显示进度 Modal
+    setShowProgressModal(true);
+    setIsUploading(true);
 
     let successCount = 0;
     let errorCount = 0;
@@ -154,19 +293,23 @@ export default function FileUploader({
       }
     }
 
+    // 上传完成
+    setIsUploading(false);
+
     // Notify completion
     if (successCount > 0) {
-      onSuccess(`Uploaded ${successCount} file(s). Click "Start OCR" to begin processing.`);
+      onSuccess(`已上传 ${successCount} 个文件。点击 "Start OCR" 开始处理。`);
       onUploadComplete();
     }
     if (errorCount > 0) {
-      onError(`${errorCount} file(s) failed to upload.`);
+      onError(`${errorCount} 个文件上传失败。`);
     }
+  };
 
-    // Clear completed files after a delay
-    setTimeout(() => {
-      setUploadingFiles(prev => prev.filter(f => f.status !== 'completed'));
-    }, 2000);
+  // 关闭 Modal 并清理完成的文件
+  const handleCloseModal = () => {
+    setShowProgressModal(false);
+    setUploadingFiles(prev => prev.filter(f => f.status !== 'completed'));
   };
 
   // Clear all files
@@ -395,6 +538,15 @@ export default function FileUploader({
             </div>
           )}
         </div>
+      )}
+
+      {/* 上传进度 Modal */}
+      {showProgressModal && (
+        <UploadProgressModal
+          files={uploadingFiles}
+          onClose={handleCloseModal}
+          isUploading={isUploading}
+        />
       )}
     </div>
   );
