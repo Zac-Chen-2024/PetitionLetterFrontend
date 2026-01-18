@@ -34,6 +34,131 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
 // Upload progress callback type
 export type UploadProgressCallback = (loaded: number, total: number, percent: number) => void;
 
+// Chunked upload constants
+const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB per chunk
+
+// Chunked upload types
+interface InitUploadResponse {
+  upload_id: string;
+  chunk_size: number;
+}
+
+interface ChunkUploadResponse {
+  success: boolean;
+  upload_id: string;
+  chunk_index: number;
+  chunks_received: number;
+  total_chunks: number;
+}
+
+// Chunked upload API
+export const chunkedUploadApi = {
+  // Initialize chunked upload
+  initUpload: async (
+    projectId: string,
+    fileName: string,
+    fileSize: number,
+    totalChunks: number,
+    exhibitNumber?: string,
+    exhibitTitle?: string
+  ): Promise<InitUploadResponse> => {
+    const response = await fetch(`${API_BASE}/api/upload/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        project_id: projectId,
+        file_name: fileName,
+        file_size: fileSize,
+        total_chunks: totalChunks,
+        exhibit_number: exhibitNumber || null,
+        exhibit_title: exhibitTitle || null,
+      }),
+    });
+    if (!response.ok) throw new Error(`Init upload failed: ${response.status}`);
+    return response.json();
+  },
+
+  // Upload a single chunk
+  uploadChunk: async (
+    uploadId: string,
+    chunkIndex: number,
+    chunkBlob: Blob
+  ): Promise<ChunkUploadResponse> => {
+    const formData = new FormData();
+    formData.append('chunk', chunkBlob);
+
+    const response = await fetch(`${API_BASE}/api/upload/chunk/${uploadId}/${chunkIndex}`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!response.ok) throw new Error(`Chunk upload failed: ${response.status}`);
+    return response.json();
+  },
+
+  // Complete chunked upload
+  completeUpload: async (uploadId: string): Promise<unknown> => {
+    const response = await fetch(`${API_BASE}/api/upload/complete/${uploadId}`, {
+      method: 'POST',
+    });
+    if (!response.ok) throw new Error(`Complete upload failed: ${response.status}`);
+    return response.json();
+  },
+
+  // Cancel chunked upload
+  cancelUpload: async (uploadId: string): Promise<void> => {
+    await fetch(`${API_BASE}/api/upload/cancel/${uploadId}`, {
+      method: 'DELETE',
+    });
+  },
+};
+
+// Upload file using chunked upload with progress
+export async function uploadFileChunked(
+  projectId: string,
+  file: File,
+  exhibitNumber?: string,
+  exhibitTitle?: string,
+  onProgress?: (percent: number) => void
+): Promise<unknown> {
+  const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+
+  // 1. Initialize upload
+  const { upload_id } = await chunkedUploadApi.initUpload(
+    projectId,
+    file.name,
+    file.size,
+    totalChunks,
+    exhibitNumber,
+    exhibitTitle
+  );
+
+  try {
+    // 2. Upload chunks with progress
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const chunk = file.slice(start, end);
+
+      await chunkedUploadApi.uploadChunk(upload_id, i, chunk);
+
+      // Report overall progress
+      const percent = Math.round(((i + 1) / totalChunks) * 100);
+      onProgress?.(percent);
+    }
+
+    // 3. Complete upload
+    return await chunkedUploadApi.completeUpload(upload_id);
+  } catch (error) {
+    // Try to cancel upload on error
+    try {
+      await chunkedUploadApi.cancelUpload(upload_id);
+    } catch {
+      // Ignore cancel error
+    }
+    throw error;
+  }
+}
+
 // Document APIs
 export const documentApi = {
   // Get all documents for a project
