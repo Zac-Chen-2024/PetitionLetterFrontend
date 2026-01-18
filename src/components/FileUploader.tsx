@@ -15,6 +15,9 @@ interface UploadingFile {
   exhibitNumber: string;
   status: 'pending' | 'uploading' | 'completed' | 'failed';
   error?: string;
+  progress?: number;  // Upload progress 0-100
+  uploadedBytes?: number;
+  totalBytes?: number;
 }
 
 // Available folders
@@ -106,10 +109,10 @@ export default function FileUploader({
       const item = uploadingFiles[i];
       if (item.status !== 'pending') continue;
 
-      // Update status to uploading
+      // Update status to uploading with initial progress
       setUploadingFiles(prev => {
         const updated = [...prev];
-        updated[i] = { ...updated[i], status: 'uploading' };
+        updated[i] = { ...updated[i], status: 'uploading', progress: 0 };
         return updated;
       });
 
@@ -118,13 +121,26 @@ export default function FileUploader({
           projectId,
           item.file,
           item.exhibitNumber,
-          item.file.name.replace(/\.[^/.]+$/, '') // Use filename without extension as title
+          item.file.name.replace(/\.[^/.]+$/, ''), // Use filename without extension as title
+          // Progress callback
+          (loaded, total, percent) => {
+            setUploadingFiles(prev => {
+              const updated = [...prev];
+              updated[i] = {
+                ...updated[i],
+                progress: percent,
+                uploadedBytes: loaded,
+                totalBytes: total,
+              };
+              return updated;
+            });
+          }
         );
 
         // Update status to completed
         setUploadingFiles(prev => {
           const updated = [...prev];
-          updated[i] = { ...updated[i], status: 'completed' };
+          updated[i] = { ...updated[i], status: 'completed', progress: 100 };
           return updated;
         });
         successCount++;
@@ -316,14 +332,31 @@ export default function FileUploader({
                       className="w-16 text-xs border border-gray-300 rounded px-1.5 py-0.5 text-gray-900 bg-white disabled:bg-gray-100"
                     />
 
-                    {/* File name */}
-                    <span className="flex-1 text-xs text-gray-800 truncate" title={item.file.name}>
-                      {item.file.name}
-                    </span>
+                    {/* File name and progress */}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs text-gray-800 truncate block" title={item.file.name}>
+                        {item.file.name}
+                      </span>
+                      {/* Progress bar for uploading files */}
+                      {item.status === 'uploading' && (
+                        <div className="mt-1">
+                          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 rounded-full transition-all duration-150"
+                              style={{ width: `${item.progress || 0}%` }}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
 
-                    {/* File size */}
-                    <span className="text-xs text-gray-500">
-                      {(item.file.size / 1024).toFixed(0)} KB
+                    {/* File size or upload progress */}
+                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                      {item.status === 'uploading' && item.progress !== undefined ? (
+                        <span className="text-blue-600 font-medium">{item.progress}%</span>
+                      ) : (
+                        `${(item.file.size / 1024).toFixed(0)} KB`
+                      )}
                     </span>
 
                     {/* Remove button */}
