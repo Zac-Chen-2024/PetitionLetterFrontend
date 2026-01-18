@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { documentApi } from '@/utils/api';
+import { uploadFileChunked } from '@/utils/api';
 
 interface FileUploaderProps {
   projectId: string;
@@ -106,31 +106,30 @@ export default function FileUploader({
     let errorCount = 0;
 
     for (let i = 0; i < uploadingFiles.length; i++) {
+      const currentIndex = i;  // Capture value to avoid closure bug
       const item = uploadingFiles[i];
       if (item.status !== 'pending') continue;
 
       // Update status to uploading with initial progress
       setUploadingFiles(prev => {
         const updated = [...prev];
-        updated[i] = { ...updated[i], status: 'uploading', progress: 0 };
+        updated[currentIndex] = { ...updated[currentIndex], status: 'uploading', progress: 0 };
         return updated;
       });
 
       try {
-        await documentApi.upload(
+        await uploadFileChunked(
           projectId,
           item.file,
           item.exhibitNumber,
           item.file.name.replace(/\.[^/.]+$/, ''), // Use filename without extension as title
-          // Progress callback
-          (loaded, total, percent) => {
+          // Progress callback (chunked upload provides percent directly)
+          (percent) => {
             setUploadingFiles(prev => {
               const updated = [...prev];
-              updated[i] = {
-                ...updated[i],
+              updated[currentIndex] = {
+                ...updated[currentIndex],
                 progress: percent,
-                uploadedBytes: loaded,
-                totalBytes: total,
               };
               return updated;
             });
@@ -140,7 +139,7 @@ export default function FileUploader({
         // Update status to completed
         setUploadingFiles(prev => {
           const updated = [...prev];
-          updated[i] = { ...updated[i], status: 'completed', progress: 100 };
+          updated[currentIndex] = { ...updated[currentIndex], status: 'completed', progress: 100 };
           return updated;
         });
         successCount++;
@@ -148,7 +147,7 @@ export default function FileUploader({
         // Update status to failed
         setUploadingFiles(prev => {
           const updated = [...prev];
-          updated[i] = { ...updated[i], status: 'failed', error: (error as Error).message };
+          updated[currentIndex] = { ...updated[currentIndex], status: 'failed', error: (error as Error).message };
           return updated;
         });
         errorCount++;
