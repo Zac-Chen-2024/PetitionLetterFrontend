@@ -31,30 +31,64 @@ async function fetchApi<T>(endpoint: string, options?: RequestInit): Promise<T> 
   return response.json();
 }
 
+// Upload progress callback type
+export type UploadProgressCallback = (loaded: number, total: number, percent: number) => void;
+
 // Document APIs
 export const documentApi = {
   // Get all documents for a project
   getDocuments: (projectId: string) =>
     fetchApi<{ documents: Document[]; total: number }>(`/api/documents/${projectId}`),
 
-  // Upload a document
-  upload: async (projectId: string, file: File, exhibitNumber?: string, exhibitTitle?: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('project_id', projectId);
-    if (exhibitNumber) formData.append('exhibit_number', exhibitNumber);
-    if (exhibitTitle) formData.append('exhibit_title', exhibitTitle);
+  // Upload a document with progress tracking
+  upload: async (
+    projectId: string,
+    file: File,
+    exhibitNumber?: string,
+    exhibitTitle?: string,
+    onProgress?: UploadProgressCallback
+  ): Promise<unknown> => {
+    return new Promise((resolve, reject) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('project_id', projectId);
+      if (exhibitNumber) formData.append('exhibit_number', exhibitNumber);
+      if (exhibitTitle) formData.append('exhibit_title', exhibitTitle);
 
-    const response = await fetch(`${API_BASE}/api/upload`, {
-      method: 'POST',
-      body: formData,
+      const xhr = new XMLHttpRequest();
+
+      // Track upload progress
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && onProgress) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          onProgress(event.loaded, event.total, percent);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            resolve(response);
+          } catch {
+            resolve(xhr.responseText);
+          }
+        } else {
+          reject(new Error(`Upload failed: ${xhr.status}`));
+        }
+      };
+
+      xhr.onerror = () => {
+        reject(new Error('Network error during upload'));
+      };
+
+      xhr.ontimeout = () => {
+        reject(new Error('Upload timed out'));
+      };
+
+      xhr.open('POST', `${API_BASE}/api/upload`);
+      xhr.send(formData);
     });
-
-    if (!response.ok) {
-      throw new Error(`Upload failed: ${response.status}`);
-    }
-
-    return response.json();
   },
 
   // Delete a single document
