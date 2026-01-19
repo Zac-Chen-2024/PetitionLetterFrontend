@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { uploadFileChunked } from '@/utils/api';
+import type { Document } from '@/types';
 
 // Types
 export interface UploadingFile {
@@ -18,6 +19,7 @@ export type ModuleStatus = 'idle' | 'uploading' | 'completed';
 
 interface UploadModuleProps {
   projectId: string;
+  documents: Document[];  // Already uploaded documents from backend
   onUploadComplete: () => void;
   onError: (message: string) => void;
   onSuccess: (message: string) => void;
@@ -63,8 +65,21 @@ const TrashIcon = () => (
   </svg>
 );
 
+// Type for displayed file (either uploading or already uploaded)
+interface DisplayFile {
+  id: string;
+  fileName: string;
+  exhibitNumber: string;
+  exhibitFolder: string;
+  status: 'pending' | 'uploading' | 'completed' | 'failed';
+  progress: number;
+  isUploading: boolean;  // true if in upload queue, false if from backend
+  error?: string;
+}
+
 export default function UploadModule({
   projectId,
+  documents,
   onUploadComplete,
   onError,
   onSuccess,
@@ -75,25 +90,70 @@ export default function UploadModule({
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Get files grouped by folder
-  const filesByFolder = useMemo(() => {
-    const grouped: Record<string, UploadingFile[]> = {};
-    EXHIBIT_FOLDERS.forEach(folder => {
-      grouped[folder] = uploadingFiles.filter(f => f.exhibitFolder === folder);
+  // Convert backend documents to display format
+  const backendFiles = useMemo((): DisplayFile[] => {
+    return documents.map(doc => {
+      const exhibitNumber = doc.exhibit_number || 'N/A';
+      const folder = exhibitNumber.split('-')[0] || 'A';
+      return {
+        id: doc.id,
+        fileName: doc.file_name,
+        exhibitNumber,
+        exhibitFolder: folder,
+        status: 'completed' as const,
+        progress: 100,
+        isUploading: false,
+      };
     });
-    return grouped;
+  }, [documents]);
+
+  // Convert uploading files to display format
+  const uploadingDisplayFiles = useMemo((): DisplayFile[] => {
+    return uploadingFiles.map(f => ({
+      id: f.id,
+      fileName: f.file.name,
+      exhibitNumber: f.exhibitNumber,
+      exhibitFolder: f.exhibitFolder,
+      status: f.status,
+      progress: f.progress,
+      isUploading: true,
+      error: f.error,
+    }));
   }, [uploadingFiles]);
 
-  // Get next number for selected folder
+  // Merge all files (backend + uploading), avoid duplicates
+  const allDisplayFiles = useMemo((): DisplayFile[] => {
+    // Start with backend files
+    const files = [...backendFiles];
+    // Add uploading files that aren't already in backend (by exhibitNumber)
+    const backendExhibits = new Set(backendFiles.map(f => f.exhibitNumber));
+    for (const f of uploadingDisplayFiles) {
+      if (!backendExhibits.has(f.exhibitNumber)) {
+        files.push(f);
+      }
+    }
+    return files;
+  }, [backendFiles, uploadingDisplayFiles]);
+
+  // Get files grouped by folder
+  const filesByFolder = useMemo(() => {
+    const grouped: Record<string, DisplayFile[]> = {};
+    EXHIBIT_FOLDERS.forEach(folder => {
+      grouped[folder] = allDisplayFiles.filter(f => f.exhibitFolder === folder);
+    });
+    return grouped;
+  }, [allDisplayFiles]);
+
+  // Get next number for selected folder (consider all files including backend)
   const getNextNumber = useCallback((folder: string) => {
-    const folderFiles = uploadingFiles.filter(f => f.exhibitFolder === folder);
+    const folderFiles = allDisplayFiles.filter(f => f.exhibitFolder === folder);
     if (folderFiles.length === 0) return 1;
     const maxNum = Math.max(...folderFiles.map(f => {
       const match = f.exhibitNumber.match(/-(\d+)$/);
       return match ? parseInt(match[1]) : 0;
     }));
     return maxNum + 1;
-  }, [uploadingFiles]);
+  }, [allDisplayFiles]);
 
   // Get module status
   const getModuleStatus = (): ModuleStatus => {
@@ -235,7 +295,7 @@ export default function UploadModule({
 
   const currentFolderFiles = filesByFolder[selectedFolder] || [];
   const pendingCount = uploadingFiles.filter(f => f.status === 'pending').length;
-  const totalCount = uploadingFiles.length;
+  const totalCount = allDisplayFiles.length;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
@@ -363,8 +423,8 @@ export default function UploadModule({
                       <p className="text-xs font-medium text-gray-700 truncate">
                         {item.exhibitNumber}
                       </p>
-                      <p className="text-xs text-gray-500 truncate" title={item.file.name}>
-                        {item.file.name}
+                      <p className="text-xs text-gray-500 truncate" title={item.fileName}>
+                        {item.fileName}
                       </p>
                       {/* Progress Bar */}
                       {item.status === 'uploading' && (
@@ -377,11 +437,11 @@ export default function UploadModule({
                       )}
                     </div>
 
-                    {/* Progress / Remove */}
+                    {/* Progress / Remove (only for uploading files, not backend files) */}
                     <div className="flex-shrink-0">
                       {item.status === 'uploading' ? (
                         <span className="text-xs text-blue-600">{item.progress}%</span>
-                      ) : item.status === 'pending' ? (
+                      ) : item.status === 'pending' && item.isUploading ? (
                         <button
                           onClick={() => removeFile(item.id)}
                           className="p-1 text-gray-400 hover:text-red-600 transition-colors"

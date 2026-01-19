@@ -439,6 +439,7 @@ export default function App() {
               {/* Module 1: Upload */}
               <UploadModule
                 projectId={currentProject.id}
+                documents={documents}
                 onUploadComplete={handleUploadComplete}
                 onSuccess={handleSuccess}
                 onError={handleError}
