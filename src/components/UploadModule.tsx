@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { uploadFileChunked } from '@/utils/api';
 
 // Types
@@ -8,6 +8,7 @@ export interface UploadingFile {
   id: string;
   file: File;
   exhibitNumber: string;
+  exhibitFolder: string;
   status: 'pending' | 'uploading' | 'completed' | 'failed';
   progress: number;
   error?: string;
@@ -33,7 +34,7 @@ const UploadIcon = () => (
 );
 
 const CloudUploadIcon = () => (
-  <svg className="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+  <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
   </svg>
 );
@@ -56,6 +57,12 @@ const FileIcon = () => (
   </svg>
 );
 
+const TrashIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
 export default function UploadModule({
   projectId,
   onUploadComplete,
@@ -65,9 +72,28 @@ export default function UploadModule({
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState('A');
-  const [nextNumber, setNextNumber] = useState(1);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Get files grouped by folder
+  const filesByFolder = useMemo(() => {
+    const grouped: Record<string, UploadingFile[]> = {};
+    EXHIBIT_FOLDERS.forEach(folder => {
+      grouped[folder] = uploadingFiles.filter(f => f.exhibitFolder === folder);
+    });
+    return grouped;
+  }, [uploadingFiles]);
+
+  // Get next number for selected folder
+  const getNextNumber = useCallback((folder: string) => {
+    const folderFiles = uploadingFiles.filter(f => f.exhibitFolder === folder);
+    if (folderFiles.length === 0) return 1;
+    const maxNum = Math.max(...folderFiles.map(f => {
+      const match = f.exhibitNumber.match(/-(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    }));
+    return maxNum + 1;
+  }, [uploadingFiles]);
 
   // Get module status
   const getModuleStatus = (): ModuleStatus => {
@@ -83,7 +109,7 @@ export default function UploadModule({
     if (!files || files.length === 0) return;
 
     const newFiles: UploadingFile[] = [];
-    let currentNumber = nextNumber;
+    let currentNumber = getNextNumber(selectedFolder);
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
@@ -97,6 +123,7 @@ export default function UploadModule({
         id: `${Date.now()}-${i}`,
         file,
         exhibitNumber: `${selectedFolder}-${currentNumber}`,
+        exhibitFolder: selectedFolder,
         status: 'pending',
         progress: 0,
       });
@@ -105,9 +132,8 @@ export default function UploadModule({
 
     if (newFiles.length > 0) {
       setUploadingFiles(prev => [...prev, ...newFiles]);
-      setNextNumber(currentNumber);
     }
-  }, [selectedFolder, nextNumber]);
+  }, [selectedFolder, getNextNumber]);
 
   // Handle drag events
   const handleDragOver = (e: React.DragEvent) => {
@@ -124,13 +150,6 @@ export default function UploadModule({
     e.preventDefault();
     setIsDragging(false);
     handleFiles(e.dataTransfer.files);
-  };
-
-  // Update exhibit number for a file
-  const updateExhibitNumber = (id: string, exhibitNumber: string) => {
-    setUploadingFiles(prev =>
-      prev.map(f => f.id === id ? { ...f, exhibitNumber } : f)
-    );
   };
 
   // Remove a file from the list
@@ -198,9 +217,9 @@ export default function UploadModule({
     }, 2000);
   };
 
-  // Clear all files
-  const clearAll = () => {
-    setUploadingFiles([]);
+  // Clear all files in selected folder
+  const clearFolder = () => {
+    setUploadingFiles(prev => prev.filter(f => f.exhibitFolder !== selectedFolder));
   };
 
   // Status badge component
@@ -218,6 +237,10 @@ export default function UploadModule({
     );
   };
 
+  const currentFolderFiles = filesByFolder[selectedFolder] || [];
+  const pendingCount = uploadingFiles.filter(f => f.status === 'pending').length;
+  const totalCount = uploadingFiles.length;
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       {/* Header */}
@@ -228,203 +251,191 @@ export default function UploadModule({
               <UploadIcon />
             </div>
             <h3 className="text-base font-semibold text-gray-900">上传模块</h3>
+            {totalCount > 0 && (
+              <span className="text-xs text-gray-500">
+                {totalCount} 个文件
+              </span>
+            )}
           </div>
-          <StatusBadge status={moduleStatus} />
+          <div className="flex items-center gap-2">
+            {pendingCount > 0 && (
+              <button
+                onClick={uploadAll}
+                disabled={isUploading}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                <UploadIcon />
+                上传 ({pendingCount})
+              </button>
+            )}
+            <StatusBadge status={moduleStatus} />
+          </div>
         </div>
       </div>
 
       {/* Content */}
-      <div className="p-5 space-y-4">
-        {/* Exhibit Selection */}
-        <div className="flex items-center gap-4 flex-wrap">
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">Exhibit:</label>
-            <select
-              value={selectedFolder}
-              onChange={(e) => {
-                setSelectedFolder(e.target.value);
-                setNextNumber(1);
-              }}
-              className="px-3 py-1.5 text-sm border border-gray-300 rounded-lg bg-white text-gray-900 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            >
-              {EXHIBIT_FOLDERS.map(folder => (
-                <option key={folder} value={folder}>{folder}</option>
-              ))}
-            </select>
-          </div>
-          <div className="flex items-center gap-2">
-            <label className="text-sm font-medium text-gray-700">起始编号:</label>
-            <input
-              type="number"
-              min="1"
-              value={nextNumber}
-              onChange={(e) => setNextNumber(parseInt(e.target.value) || 1)}
-              className="w-16 px-2 py-1.5 text-sm border border-gray-300 rounded-lg text-gray-900 bg-white text-center focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
-          <div className="text-sm text-gray-600">
-            下一个: <span className="font-mono font-semibold text-blue-600">{selectedFolder}-{nextNumber}</span>
-          </div>
-        </div>
-
-        {/* Drop Zone */}
-        <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-all ${
-            isDragging
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
-          }`}
-        >
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif"
-            onChange={(e) => handleFiles(e.target.files)}
-            className="hidden"
-          />
-          <div className="text-gray-400 mb-3">
-            <CloudUploadIcon />
-          </div>
-          <p className="text-sm font-medium text-gray-700">
-            拖拽文件到这里，或点击上传
-          </p>
-          <p className="text-xs text-gray-500 mt-1">
-            支持 PDF、JPG、PNG
-          </p>
-        </div>
-
-        {/* Upload Progress List */}
-        {uploadingFiles.length > 0 && (
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">上传中：</span>
-              <div className="flex gap-2">
-                <button
-                  onClick={clearAll}
-                  className="text-xs text-gray-500 hover:text-gray-700"
-                >
-                  清除
-                </button>
-              </div>
-            </div>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
-              {uploadingFiles.map((item) => (
-                <div
-                  key={item.id}
-                  className={`flex items-center gap-3 p-3 rounded-lg border ${
-                    item.status === 'completed'
-                      ? 'bg-green-50 border-green-200'
-                      : item.status === 'failed'
-                      ? 'bg-red-50 border-red-200'
-                      : item.status === 'uploading'
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-gray-50 border-gray-200'
-                  }`}
-                >
-                  {/* Status Icon */}
-                  <div className="flex-shrink-0 w-5 h-5 flex items-center justify-center">
-                    {item.status === 'uploading' ? (
-                      <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                    ) : item.status === 'completed' ? (
-                      <div className="w-4 h-4 bg-green-500 rounded-full flex items-center justify-center">
-                        <CheckIcon />
-                      </div>
-                    ) : item.status === 'failed' ? (
-                      <div className="w-4 h-4 bg-red-500 rounded-full flex items-center justify-center text-white">
-                        <XIcon />
-                      </div>
-                    ) : (
-                      <div className="text-gray-400">
-                        <FileIcon />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Exhibit Number (editable for pending) */}
-                  {item.status === 'pending' ? (
-                    <input
-                      type="text"
-                      value={item.exhibitNumber}
-                      onChange={(e) => updateExhibitNumber(item.id, e.target.value)}
-                      className="w-14 text-xs border border-gray-300 rounded px-1.5 py-0.5 text-gray-900 bg-white"
-                    />
-                  ) : (
-                    <span className="text-xs font-medium text-gray-700 w-14">{item.exhibitNumber}</span>
-                  )}
-
-                  {/* File Info and Progress */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm text-gray-800 truncate" title={item.file.name}>
-                        {item.file.name}
-                      </span>
-                      <span className={`text-xs font-medium ml-2 ${
-                        item.status === 'completed' ? 'text-green-600' :
-                        item.status === 'failed' ? 'text-red-600' :
-                        item.status === 'uploading' ? 'text-blue-600' : 'text-gray-400'
+      <div className="flex" style={{ minHeight: '300px' }}>
+        {/* Left: Exhibit Tabs (Horizontal) + File List (Vertical) */}
+        <div className="w-64 border-r border-gray-200 flex flex-col">
+          {/* Horizontal Exhibit Tabs */}
+          <div className="px-2 py-2 border-b border-gray-100 bg-gray-50">
+            <div className="flex flex-wrap gap-1">
+              {EXHIBIT_FOLDERS.map(folder => {
+                const count = filesByFolder[folder]?.length || 0;
+                return (
+                  <button
+                    key={folder}
+                    onClick={() => setSelectedFolder(folder)}
+                    className={`relative px-3 py-1.5 text-xs font-medium rounded transition-colors ${
+                      selectedFolder === folder
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-white text-gray-700 hover:bg-gray-100 border border-gray-200'
+                    }`}
+                  >
+                    {folder}
+                    {count > 0 && (
+                      <span className={`absolute -top-1 -right-1 w-4 h-4 text-xs rounded-full flex items-center justify-center ${
+                        selectedFolder === folder ? 'bg-white text-blue-600' : 'bg-blue-500 text-white'
                       }`}>
-                        {item.status === 'completed' ? '完成' :
-                         item.status === 'failed' ? '失败' :
-                         item.status === 'uploading' ? `${item.progress}%` : '等待中'}
+                        {count}
                       </span>
-                    </div>
-                    {/* Progress Bar */}
-                    <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-300 ${
-                          item.status === 'completed' ? 'bg-green-500' :
-                          item.status === 'failed' ? 'bg-red-500' : 'bg-blue-500'
-                        }`}
-                        style={{ width: `${item.progress}%` }}
-                      />
-                    </div>
-                    {item.status === 'failed' && item.error && (
-                      <p className="text-xs text-red-500 mt-1 truncate">{item.error}</p>
                     )}
-                  </div>
-
-                  {/* Remove Button (for pending only) */}
-                  {item.status === 'pending' && (
-                    <button
-                      onClick={() => removeFile(item.id)}
-                      className="text-gray-400 hover:text-red-600 transition-colors"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  )}
-                </div>
-              ))}
+                  </button>
+                );
+              })}
             </div>
+          </div>
 
-            {/* Upload Button */}
-            {uploadingFiles.some(f => f.status === 'pending') && (
+          {/* File List Header */}
+          <div className="px-3 py-2 border-b border-gray-100 flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-600">
+              Exhibit {selectedFolder} ({currentFolderFiles.length})
+            </span>
+            {currentFolderFiles.length > 0 && (
               <button
-                onClick={uploadAll}
-                disabled={isUploading}
-                className="w-full py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium text-sm flex items-center justify-center gap-2 transition-colors"
+                onClick={clearFolder}
+                className="text-xs text-gray-400 hover:text-red-500 transition-colors"
               >
-                {isUploading ? (
-                  <>
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    上传中...
-                  </>
-                ) : (
-                  <>
-                    <UploadIcon />
-                    开始上传
-                  </>
-                )}
+                清除
               </button>
             )}
           </div>
-        )}
+
+          {/* Vertical File List */}
+          <div className="flex-1 overflow-y-auto">
+            {currentFolderFiles.length === 0 ? (
+              <div className="p-4 text-center text-xs text-gray-400">
+                暂无文件
+                <p className="mt-1">拖拽或点击右侧区域上传</p>
+              </div>
+            ) : (
+              <div className="py-1">
+                {currentFolderFiles.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`flex items-center gap-2 px-3 py-2 border-b border-gray-50 ${
+                      item.status === 'completed'
+                        ? 'bg-green-50'
+                        : item.status === 'failed'
+                        ? 'bg-red-50'
+                        : item.status === 'uploading'
+                        ? 'bg-blue-50'
+                        : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    {/* Status Icon */}
+                    <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
+                      {item.status === 'uploading' ? (
+                        <div className="w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      ) : item.status === 'completed' ? (
+                        <div className="w-3 h-3 bg-green-500 rounded-full flex items-center justify-center">
+                          <CheckIcon />
+                        </div>
+                      ) : item.status === 'failed' ? (
+                        <div className="w-3 h-3 bg-red-500 rounded-full flex items-center justify-center text-white">
+                          <XIcon />
+                        </div>
+                      ) : (
+                        <div className="text-gray-400">
+                          <FileIcon />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* File Info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-gray-700 truncate">
+                        {item.exhibitNumber}
+                      </p>
+                      <p className="text-xs text-gray-500 truncate" title={item.file.name}>
+                        {item.file.name}
+                      </p>
+                      {/* Progress Bar */}
+                      {item.status === 'uploading' && (
+                        <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 rounded-full transition-all duration-300"
+                            style={{ width: `${item.progress}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Progress / Remove */}
+                    <div className="flex-shrink-0">
+                      {item.status === 'uploading' ? (
+                        <span className="text-xs text-blue-600">{item.progress}%</span>
+                      ) : item.status === 'pending' ? (
+                        <button
+                          onClick={() => removeFile(item.id)}
+                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                        >
+                          <TrashIcon />
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right: Drop Zone */}
+        <div className="flex-1 p-4 flex items-center justify-center">
+          <div
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`w-full h-full border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all ${
+              isDragging
+                ? 'border-blue-500 bg-blue-50'
+                : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'
+            }`}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.png,.jpg,.jpeg,.tiff,.tif"
+              onChange={(e) => handleFiles(e.target.files)}
+              className="hidden"
+            />
+            <div className={`mb-3 ${isDragging ? 'text-blue-500' : 'text-gray-400'}`}>
+              <CloudUploadIcon />
+            </div>
+            <p className="text-sm font-medium text-gray-700">
+              拖拽文件到这里，或点击上传
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              支持 PDF、JPG、PNG
+            </p>
+            <p className="text-xs text-blue-600 mt-3 font-medium">
+              当前目标: Exhibit {selectedFolder}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   );
