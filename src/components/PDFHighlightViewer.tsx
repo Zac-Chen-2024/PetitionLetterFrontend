@@ -85,6 +85,10 @@ export default function PDFHighlightViewer({
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const [selectedHighlight, setSelectedHighlight] = useState<HighlightItem | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{
+    width: number;
+    height: number;
+  } | null>(null);
 
   // Update selected highlight when selectedHighlightId changes from parent
   useEffect(() => {
@@ -107,6 +111,7 @@ export default function PDFHighlightViewer({
     const loadPageData = async () => {
       setLoading(true);
       setError(null);
+      setImageDimensions(null);
 
       try {
         // Get page image URL
@@ -171,6 +176,20 @@ export default function PDFHighlightViewer({
     if (imageUrl) {
       window.open(imageUrl, '_blank');
     }
+  };
+
+  // Convert normalized coordinates (0-1000) to pixel coordinates
+  const convertBboxToPixels = (
+    bbox: { x1: number; y1: number; x2: number; y2: number },
+    imgWidth: number,
+    imgHeight: number
+  ) => {
+    return {
+      left: (bbox.x1 / 1000) * imgWidth,
+      top: (bbox.y1 / 1000) * imgHeight,
+      width: ((bbox.x2 - bbox.x1) / 1000) * imgWidth,
+      height: ((bbox.y2 - bbox.y1) / 1000) * imgHeight,
+    };
   };
 
   if (!documentId) {
@@ -266,18 +285,28 @@ export default function PDFHighlightViewer({
                 src={imageUrl}
                 alt={`Page ${currentPage}`}
                 className="max-w-full h-auto"
+                onLoad={(e) => {
+                  const img = e.target as HTMLImageElement;
+                  setImageDimensions({
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                  });
+                }}
                 onError={() => setError('图片加载失败')}
               />
 
               {/* Highlight Overlays */}
-              {highlights.map((highlight, idx) => {
-                if (!highlight.bbox || !highlight.bbox.x1) return null;
+              {imageDimensions && highlights.map((highlight, idx) => {
+                if (!highlight.bbox || highlight.bbox.x1 == null) return null;
 
                 const { x1, y1, x2, y2 } = highlight.bbox;
-                const width = (x2 || 0) - (x1 || 0);
-                const height = (y2 || 0) - (y1 || 0);
+                const pixelCoords = convertBboxToPixels(
+                  { x1, y1, x2: x2 || 0, y2: y2 || 0 },
+                  imageDimensions.width,
+                  imageDimensions.height
+                );
 
-                if (width <= 0 || height <= 0) return null;
+                if (pixelCoords.width <= 0 || pixelCoords.height <= 0) return null;
 
                 return (
                   <div
@@ -288,10 +317,10 @@ export default function PDFHighlightViewer({
                         : 'hover:ring-2 hover:ring-blue-300'
                     }`}
                     style={{
-                      left: `${x1}px`,
-                      top: `${y1}px`,
-                      width: `${width}px`,
-                      height: `${height}px`,
+                      left: `${pixelCoords.left}px`,
+                      top: `${pixelCoords.top}px`,
+                      width: `${pixelCoords.width}px`,
+                      height: `${pixelCoords.height}px`,
                       backgroundColor: getCategoryColor(highlight.category),
                       borderRadius: '2px',
                     }}
