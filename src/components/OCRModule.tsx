@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ocrApi } from '@/utils/api';
 import type { Document } from '@/types';
-import MarkdownPreview from './MarkdownPreview';
 
 // Types
 export type OCRFileStatus = 'pending' | 'queued' | 'processing' | 'completed' | 'failed';
@@ -346,24 +345,35 @@ export default function OCRModule({
         {/* Right: Preview Area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Preview Header */}
-          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-600">
               {selectedFile
                 ? `OCR 结果 - ${selectedFile.exhibitNumber}: ${selectedFile.fileName}`
                 : 'OCR 结果预览'}
             </span>
+            {selectedOCRText && (
+              <button
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(selectedOCRText);
+                  } catch (err) {
+                    console.error('Failed to copy:', err);
+                  }
+                }}
+                className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 hover:bg-gray-200 rounded transition-colors"
+              >
+                复制
+              </button>
+            )}
           </div>
 
-          {/* Preview Content */}
-          <div className="flex-1 overflow-hidden">
+          {/* Preview Content - Fixed Height with Scroll */}
+          <div className="flex-1 overflow-y-auto p-4 bg-white">
             {selectedOCRText ? (
-              <div className="h-full overflow-y-auto p-4">
-                <MarkdownPreview
-                  content={selectedOCRText}
-                  title=""
-                  maxHeight="none"
-                  showCopyButton={true}
-                />
+              <div
+                className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap font-mono text-sm leading-relaxed"
+              >
+                {selectedOCRText}
               </div>
             ) : (
               <div className="h-full flex items-center justify-center text-gray-400">
