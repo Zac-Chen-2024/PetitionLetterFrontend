@@ -24,6 +24,7 @@ interface HighlightModuleProps {
   onHighlightComplete: () => void;
   onSuccess: (message: string) => void;
   onError: (message: string) => void;
+  modelsReady?: boolean;
 }
 
 // Icons
@@ -79,6 +80,7 @@ export default function HighlightModule({
   onHighlightComplete,
   onSuccess,
   onError,
+  modelsReady = true,
 }: HighlightModuleProps) {
   const [highlightFiles, setHighlightFiles] = useState<HighlightFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -292,11 +294,12 @@ export default function HighlightModule({
           <div className="flex items-center gap-2">
             <button
               onClick={handleStartAll}
-              disabled={pendingCount === 0 || isProcessing}
+              disabled={pendingCount === 0 || isProcessing || !modelsReady}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 text-white text-xs font-medium rounded-lg hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title={!modelsReady ? '模型加载中...' : undefined}
             >
               <PlayIcon />
-              全部分析
+              {!modelsReady ? '模型加载中...' : '全部分析'}
             </button>
             <StatusBadge status={moduleStatus} />
           </div>
@@ -354,7 +357,7 @@ export default function HighlightModule({
                           {file.fileName}
                         </p>
                       </div>
-                      {(file.status === 'pending' || file.status === 'not_started') && !isProcessing && (
+                      {(file.status === 'pending' || file.status === 'not_started') && !isProcessing && modelsReady && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

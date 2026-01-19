@@ -530,6 +530,26 @@ export const projectApi = {
     }),
 };
 
+// Preload status types
+export interface ModelStatus {
+  name: string;
+  status: 'not_loaded' | 'loading' | 'loaded' | 'error';
+  progress: number;
+  error: string | null;
+  gpu_memory_gb?: number;
+}
+
+export interface PreloadStatus {
+  is_ready: boolean;
+  is_loading: boolean;
+  started_at: string | null;
+  completed_at: string | null;
+  models: {
+    ocr: ModelStatus;
+    llm: ModelStatus;
+  };
+}
+
 // Health check
 export const healthApi = {
   check: () =>
@@ -541,7 +561,13 @@ export const healthApi = {
       llm_model: string;
       available_models: string[];
       openai: string;
+      models_ready?: boolean;
+      models_loading?: boolean;
     }>('/api/health'),
+
+  // Get model preload status
+  getPreloadStatus: () =>
+    fetchApi<PreloadStatus>('/api/preload-status'),
 };
 
 // Style Template types
