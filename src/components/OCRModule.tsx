@@ -286,7 +286,7 @@ export default function OCRModule({
       </div>
 
       {/* Content - Left-Right Layout */}
-      <div className="flex" style={{ minHeight: '400px' }}>
+      <div className="flex" style={{ height: '500px' }}>
         {/* Left: File List (Collapsible) */}
         <div
           className={`border-r border-gray-200 flex flex-col transition-all duration-300 ${
