@@ -24,6 +24,7 @@ interface OCRModuleProps {
   onOCRComplete: () => void;
   onSuccess: (message: string) => void;
   onError: (message: string) => void;
+  modelsReady?: boolean;
 }
 
 // Icons
@@ -80,6 +81,7 @@ export default function OCRModule({
   onOCRComplete,
   onSuccess,
   onError,
+  modelsReady = true,
 }: OCRModuleProps) {
   const [ocrFiles, setOcrFiles] = useState<OCRFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -271,11 +273,12 @@ export default function OCRModule({
           <div className="flex items-center gap-2">
             <button
               onClick={handleStartAll}
-              disabled={pendingCount === 0 || isProcessing}
+              disabled={pendingCount === 0 || isProcessing || !modelsReady}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title={!modelsReady ? '模型加载中...' : undefined}
             >
               <PlayIcon />
-              全部开始
+              {!modelsReady ? '模型加载中...' : '全部开始'}
             </button>
             <StatusBadge status={moduleStatus} />
           </div>
@@ -332,7 +335,7 @@ export default function OCRModule({
                           {file.fileName}
                         </p>
                       </div>
-                      {file.status === 'pending' && !isProcessing && (
+                      {file.status === 'pending' && !isProcessing && modelsReady && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();

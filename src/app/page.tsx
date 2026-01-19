@@ -1,7 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { projectApi, documentApi, type Project } from '@/utils/api';
+import { useState, useEffect, useCallback } from 'react';
+import { projectApi, documentApi, healthApi, type Project, type PreloadStatus } from '@/utils/api';
 import type { Document } from '@/types';
 import UploadModule from '@/components/UploadModule';
 import OCRModule from '@/components/OCRModule';
@@ -102,8 +102,41 @@ export default function App() {
   // Backend status
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
 
+  // Model preload status
+  const [preloadStatus, setPreloadStatus] = useState<PreloadStatus | null>(null);
+
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
+
+  // ============================================================================
+  // API FUNCTIONS (defined before effects that use them)
+  // ============================================================================
+  const checkBackendStatus = useCallback(async () => {
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_BASE}/`);
+      setBackendStatus(response.ok ? 'online' : 'offline');
+    } catch {
+      setBackendStatus('offline');
+    }
+  }, []);
+
+  // Poll model preload status
+  const pollPreloadStatus = useCallback(async () => {
+    try {
+      const status = await healthApi.getPreloadStatus();
+      setPreloadStatus(status);
+
+      // Continue polling if still loading
+      if (status.is_loading && !status.is_ready) {
+        setTimeout(() => pollPreloadStatus(), 2000);
+      }
+    } catch (error) {
+      console.error('Failed to get preload status:', error);
+      // Retry on error
+      setTimeout(() => pollPreloadStatus(), 5000);
+    }
+  }, []);
 
   // ============================================================================
   // EFFECTS
@@ -117,7 +150,8 @@ export default function App() {
     );
     loadProjects();
     checkBackendStatus();
-  }, []);
+    pollPreloadStatus();
+  }, [checkBackendStatus, pollPreloadStatus]);
 
   useEffect(() => {
     if (currentProject) {
@@ -126,19 +160,6 @@ export default function App() {
       setDocuments([]);
     }
   }, [currentProject]);
-
-  // ============================================================================
-  // API FUNCTIONS
-  // ============================================================================
-  const checkBackendStatus = async () => {
-    try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
-      const response = await fetch(`${API_BASE}/`);
-      setBackendStatus(response.ok ? 'online' : 'offline');
-    } catch {
-      setBackendStatus('offline');
-    }
-  };
 
   const loadProjects = async () => {
     try {
@@ -366,6 +387,37 @@ export default function App() {
 
         {/* Content Area - Three Modules */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Model Preload Status Banner */}
+          {preloadStatus && !preloadStatus.is_ready && (
+            <div className="max-w-4xl mx-auto mb-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                    <svg className="w-5 h-5 text-amber-600 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-800">模型加载中，请稍候...</p>
+                    <div className="flex gap-4 mt-1 text-xs text-amber-600">
+                      <span>
+                        OCR: {preloadStatus.models.ocr.status === 'loaded' ? '✓ 已加载' :
+                              preloadStatus.models.ocr.status === 'loading' ? `加载中 ${preloadStatus.models.ocr.progress}%` :
+                              preloadStatus.models.ocr.status === 'error' ? `✗ 错误` : '等待'}
+                      </span>
+                      <span>
+                        LLM: {preloadStatus.models.llm.status === 'loaded' ? '✓ 已加载' :
+                              preloadStatus.models.llm.status === 'loading' ? `加载中 ${preloadStatus.models.llm.progress}%` :
+                              preloadStatus.models.llm.status === 'error' ? `✗ 错误` : '等待'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {!currentProject ? (
             <div className="h-full flex items-center justify-center">
               <div className="text-center">
@@ -399,6 +451,7 @@ export default function App() {
                 onOCRComplete={handleOCRComplete}
                 onSuccess={handleSuccess}
                 onError={handleError}
+                modelsReady={preloadStatus?.is_ready ?? false}
               />
 
               {/* Module 3: Highlight */}
@@ -408,6 +461,7 @@ export default function App() {
                 onHighlightComplete={handleHighlightComplete}
                 onSuccess={handleSuccess}
                 onError={handleError}
+                modelsReady={preloadStatus?.is_ready ?? false}
               />
 
               {/* Future Modules Placeholder */}
