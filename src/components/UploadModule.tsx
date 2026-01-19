@@ -210,11 +210,7 @@ export default function UploadModule({
     if (errorCount > 0) {
       onError(`${errorCount} 个文件上传失败`);
     }
-
-    // Clear completed files after a short delay
-    setTimeout(() => {
-      setUploadingFiles(prev => prev.filter(f => f.status !== 'completed'));
-    }, 2000);
+    // Keep completed files in list - don't auto-clear
   };
 
   // Clear all files in selected folder
