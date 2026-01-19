@@ -284,7 +284,8 @@ export default function PDFHighlightViewer({
               <img
                 src={imageUrl}
                 alt={`Page ${currentPage}`}
-                className="max-w-full h-auto"
+                className="block"
+                style={{ maxWidth: 'none' }}
                 onLoad={(e) => {
                   const img = e.target as HTMLImageElement;
                   setImageDimensions({
