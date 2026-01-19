@@ -7,6 +7,11 @@ interface PDFHighlightViewerProps {
   documentId: string | null;
   documentName?: string;
   pageCount?: number;
+  // Controlled page (optional - if provided, parent controls the page)
+  currentPage?: number;
+  onPageChange?: (page: number) => void;
+  // Selected highlight from parent (optional)
+  selectedHighlightId?: string | null;
 }
 
 // Icons
@@ -58,8 +63,21 @@ const getCategoryColor = (category: string | null): string => {
 export default function PDFHighlightViewer({
   documentId,
   pageCount = 1,
+  currentPage: controlledPage,
+  onPageChange,
+  selectedHighlightId,
 }: PDFHighlightViewerProps) {
-  const [currentPage, setCurrentPage] = useState(1);
+  // Use controlled page if provided, otherwise use internal state
+  const [internalPage, setInternalPage] = useState(1);
+  const currentPage = controlledPage ?? internalPage;
+  const setCurrentPage = (page: number) => {
+    if (onPageChange) {
+      onPageChange(page);
+    } else {
+      setInternalPage(page);
+    }
+  };
+
   const [totalPages, setTotalPages] = useState(pageCount);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<HighlightItem[]>([]);
@@ -67,6 +85,16 @@ export default function PDFHighlightViewer({
   const [error, setError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(100);
   const [selectedHighlight, setSelectedHighlight] = useState<HighlightItem | null>(null);
+
+  // Update selected highlight when selectedHighlightId changes from parent
+  useEffect(() => {
+    if (selectedHighlightId) {
+      const found = highlights.find(h => h.id === selectedHighlightId);
+      if (found) {
+        setSelectedHighlight(found);
+      }
+    }
+  }, [selectedHighlightId, highlights]);
 
   // Load page image and highlights
   useEffect(() => {
@@ -106,23 +134,25 @@ export default function PDFHighlightViewer({
     setTotalPages(pageCount);
   }, [pageCount]);
 
-  // Reset to page 1 when document changes
+  // Reset to page 1 when document changes (only for internal state)
   useEffect(() => {
-    setCurrentPage(1);
+    if (!controlledPage) {
+      setInternalPage(1);
+    }
     setSelectedHighlight(null);
-  }, [documentId]);
+  }, [documentId, controlledPage]);
 
   // Navigation handlers
   const handlePrevPage = () => {
     if (currentPage > 1) {
-      setCurrentPage(prev => prev - 1);
+      setCurrentPage(currentPage - 1);
       setSelectedHighlight(null);
     }
   };
 
   const handleNextPage = () => {
     if (currentPage < totalPages) {
-      setCurrentPage(prev => prev + 1);
+      setCurrentPage(currentPage + 1);
       setSelectedHighlight(null);
     }
   };

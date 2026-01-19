@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { highlightApi, type DocumentHighlightInfo } from '@/utils/api';
+import { useState, useEffect } from 'react';
+import { highlightApi, type DocumentHighlightInfo, type HighlightItem } from '@/utils/api';
+import { usePolling } from '@/hooks/usePolling';
 import type { Document } from '@/types';
 import PDFHighlightViewer from './PDFHighlightViewer';
 
@@ -83,10 +84,74 @@ export default function HighlightModule({
   modelsReady = true,
 }: HighlightModuleProps) {
   const [highlightFiles, setHighlightFiles] = useState<HighlightFile[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<HighlightFile | null>(null);
   const [listCollapsed, setListCollapsed] = useState(false);
-  const [pollErrorCount, setPollErrorCount] = useState(0);
+  const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+
+  // Highlight list state
+  const [allHighlights, setAllHighlights] = useState<HighlightItem[]>([]);
+  const [highlightsLoading, setHighlightsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedHighlightId, setSelectedHighlightId] = useState<string | null>(null);
+
+  // Use polling hook for highlight progress (defined early so isProcessing is available)
+  const {
+    isPolling: isProcessing,
+    errorCount: pollErrorCount,
+    start: startPolling,
+  } = usePolling({
+    fetcher: () => highlightApi.getProgress(projectId),
+    shouldContinue: (progress) => progress.processing > 0 || progress.pending > 0,
+    interval: 2000,
+    errorRetryInterval: 5000,
+    maxErrorCount: 3,
+    maxDuration: 30 * 60 * 1000, // 30 minutes
+    enabled: false, // Manual start
+    onSuccess: (progress) => {
+      // Update file statuses
+      setHighlightFiles(prev => prev.map(file => {
+        const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
+        if (docInfo) {
+          return {
+            ...file,
+            status: (docInfo.highlight_status || 'pending') as HighlightFileStatus,
+          };
+        }
+        return file;
+      }));
+
+      // Check if polling is complete (no more processing/pending)
+      if (progress.processing === 0 && progress.pending === 0) {
+        onHighlightComplete();
+        if (progress.failed > 0) {
+          onError(`高光分析完成: ${progress.completed} 成功, ${progress.failed} 失败`);
+        } else if (progress.completed > 0) {
+          onSuccess(`高光分析完成: ${progress.completed} 个文档已处理`);
+        }
+      }
+    },
+    onError: (err) => {
+      console.error('Failed to get highlight progress:', err);
+    },
+    onMaxErrors: () => {
+      onError('无法连接后端服务，请检查后端是否运行');
+      // Reset processing files to pending
+      setHighlightFiles(prev => prev.map(f =>
+        f.status === 'processing'
+          ? { ...f, status: 'pending' as HighlightFileStatus }
+          : f
+      ));
+    },
+    onTimeout: () => {
+      onError('高光分析处理超时，请检查后端状态');
+      // Reset processing files to pending
+      setHighlightFiles(prev => prev.map(f =>
+        f.status === 'processing'
+          ? { ...f, status: 'pending' as HighlightFileStatus }
+          : f
+      ));
+    },
+  });
 
   // Filter to only show OCR completed documents
   useEffect(() => {
@@ -146,57 +211,6 @@ export default function HighlightModule({
   const pendingCount = highlightFiles.filter(f => f.status === 'pending' || f.status === 'not_started').length;
   const completedCount = highlightFiles.filter(f => f.status === 'completed').length;
 
-  // Poll highlight progress
-  const pollProgress = useCallback(async () => {
-    try {
-      const progress = await highlightApi.getProgress(projectId);
-      setPollErrorCount(0); // Reset error count on success
-
-      // Update file statuses
-      setHighlightFiles(prev => prev.map(file => {
-        const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
-        if (docInfo) {
-          return {
-            ...file,
-            status: (docInfo.highlight_status || 'pending') as HighlightFileStatus,
-          };
-        }
-        return file;
-      }));
-
-      // Continue polling if still processing
-      if (progress.processing > 0 || progress.pending > 0) {
-        setTimeout(pollProgress, 2000);
-      } else {
-        setIsProcessing(false);
-        onHighlightComplete();
-        if (progress.failed > 0) {
-          onError(`高光分析完成: ${progress.completed} 成功, ${progress.failed} 失败`);
-        } else if (progress.completed > 0) {
-          onSuccess(`高光分析完成: ${progress.completed} 个文档已处理`);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to get highlight progress:', err);
-      setPollErrorCount(prev => prev + 1);
-
-      // Stop polling after 3 consecutive errors
-      if (pollErrorCount >= 2) {
-        setIsProcessing(false);
-        onError('无法连接后端服务，请检查后端是否运行');
-        // Reset processing files to pending
-        setHighlightFiles(prev => prev.map(f =>
-          f.status === 'processing'
-            ? { ...f, status: 'pending' as HighlightFileStatus }
-            : f
-        ));
-      } else {
-        // Retry with longer delay
-        setTimeout(pollProgress, 5000);
-      }
-    }
-  }, [projectId, onHighlightComplete, onSuccess, onError, pollErrorCount]);
-
   // Start highlight for single document
   const handleStartSingle = async (file: HighlightFile) => {
     try {
@@ -204,12 +218,10 @@ export default function HighlightModule({
         f.id === file.id ? { ...f, status: 'processing' as HighlightFileStatus } : f
       ));
 
-      setPollErrorCount(0); // Reset error count
       await highlightApi.trigger(file.id);
-      setIsProcessing(true);
 
-      // Start polling
-      setTimeout(pollProgress, 1000);
+      // Start polling with the hook
+      startPolling();
     } catch (error) {
       console.error('Highlight failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
@@ -227,9 +239,6 @@ export default function HighlightModule({
     if (pendingCount === 0) return;
 
     try {
-      setIsProcessing(true);
-      setPollErrorCount(0); // Reset error count
-
       // Mark all pending as processing
       setHighlightFiles(prev => prev.map(f =>
         f.status === 'pending' || f.status === 'not_started'
@@ -240,15 +249,14 @@ export default function HighlightModule({
       await highlightApi.triggerBatch(projectId);
       onSuccess('高光分析已启动');
 
-      // Start polling
-      setTimeout(pollProgress, 1000);
+      // Start polling with the hook
+      startPolling();
     } catch (error) {
       console.error('Batch highlight failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
         ? '无法连接后端服务'
         : '批量高光分析启动失败';
       onError(errorMsg);
-      setIsProcessing(false);
 
       // Reset processing to pending
       setHighlightFiles(prev => prev.map(f =>
@@ -257,9 +265,47 @@ export default function HighlightModule({
     }
   };
 
+  // Load highlights when selected file changes or completes
+  useEffect(() => {
+    const loadHighlights = async () => {
+      if (!selectedFile) {
+        setAllHighlights([]);
+        return;
+      }
+
+      // Only load highlights if the file has completed highlight analysis
+      const fileStatus = highlightFiles.find(f => f.id === selectedFile.id)?.status;
+      if (fileStatus !== 'completed') {
+        setAllHighlights([]);
+        return;
+      }
+
+      setHighlightsLoading(true);
+      try {
+        const data = await highlightApi.getHighlights(selectedFile.id);
+        setAllHighlights(data.highlights || []);
+      } catch (err) {
+        console.error('Failed to load highlights:', err);
+        setAllHighlights([]);
+      } finally {
+        setHighlightsLoading(false);
+      }
+    };
+
+    loadHighlights();
+    setCurrentPage(1);
+    setSelectedHighlightId(null);
+  }, [selectedFile?.id, highlightFiles]);
+
   // Select file to view
   const handleSelectFile = (file: HighlightFile) => {
     setSelectedFile(file);
+  };
+
+  // Handle highlight click - navigate to page
+  const handleHighlightClick = (highlight: HighlightItem) => {
+    setCurrentPage(highlight.page_number);
+    setSelectedHighlightId(highlight.id);
   };
 
   // Status badge component
@@ -306,12 +352,12 @@ export default function HighlightModule({
         </div>
       </div>
 
-      {/* Content - Left-Right Layout */}
+      {/* Content - Left-Center-Right Layout */}
       <div className="flex" style={{ height: '500px' }}>
         {/* Left: File List (Collapsible) */}
         <div
           className={`border-r border-gray-200 flex flex-col transition-all duration-300 ${
-            listCollapsed ? 'w-10' : 'w-64'
+            listCollapsed ? 'w-10' : 'w-56'
           }`}
         >
           {/* List Header */}
@@ -392,7 +438,7 @@ export default function HighlightModule({
           )}
         </div>
 
-        {/* Right: PDF Preview Area */}
+        {/* Center: PDF Preview Area */}
         <div className="flex-1 flex flex-col min-w-0">
           {/* Preview Header */}
           <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
@@ -404,13 +450,95 @@ export default function HighlightModule({
           </div>
 
           {/* Preview Content */}
-          <div className="flex-1 overflow-hidden p-4">
+          <div className="flex-1 overflow-hidden p-2">
             <PDFHighlightViewer
               documentId={selectedFile?.id || null}
               documentName={selectedFile?.fileName}
               pageCount={selectedFile?.pageCount || 1}
+              currentPage={currentPage}
+              onPageChange={setCurrentPage}
+              selectedHighlightId={selectedHighlightId}
             />
           </div>
+        </div>
+
+        {/* Right: Highlight List (Collapsible) */}
+        <div
+          className={`border-l border-gray-200 flex flex-col transition-all duration-300 ${
+            rightPanelCollapsed ? 'w-10' : 'w-64'
+          }`}
+        >
+          {/* List Header */}
+          <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            <button
+              onClick={() => setRightPanelCollapsed(!rightPanelCollapsed)}
+              className="p-1 hover:bg-gray-200 rounded transition-colors"
+              title={rightPanelCollapsed ? '展开' : '折叠'}
+            >
+              {rightPanelCollapsed ? <ChevronLeftIcon /> : <ChevronRightIcon />}
+            </button>
+            {!rightPanelCollapsed && (
+              <span className="text-xs font-medium text-gray-600">
+                高光列表 {allHighlights.length > 0 && `(${allHighlights.length})`}
+              </span>
+            )}
+          </div>
+
+          {/* Highlight List */}
+          {!rightPanelCollapsed ? (
+            <div className="flex-1 overflow-y-auto">
+              {highlightsLoading ? (
+                <div className="p-4 flex items-center justify-center">
+                  <div className="w-5 h-5 border-2 border-yellow-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : allHighlights.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-400">
+                  {selectedFile?.status === 'completed'
+                    ? '暂无高光'
+                    : '完成分析后显示高光'}
+                </div>
+              ) : (
+                <div className="py-1">
+                  {allHighlights.map((highlight, idx) => (
+                    <div
+                      key={highlight.id || idx}
+                      onClick={() => handleHighlightClick(highlight)}
+                      className={`px-3 py-2 cursor-pointer transition-colors border-b border-gray-50 ${
+                        selectedHighlightId === highlight.id
+                          ? 'bg-yellow-50 border-l-2 border-l-yellow-500'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-xs text-gray-400">#{idx + 1}</span>
+                        <span className="text-xs text-gray-500">P.{highlight.page_number}</span>
+                        {highlight.category_cn && (
+                          <span className="px-1.5 py-0.5 text-xs rounded bg-yellow-100 text-yellow-700">
+                            {highlight.category_cn}
+                          </span>
+                        )}
+                        {highlight.importance === 'high' && (
+                          <span className="px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-600">
+                            重要
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-700 line-clamp-2">
+                        {highlight.text_content || '无文本内容'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Collapsed view - show count only
+            <div className="flex-1 flex flex-col items-center py-4">
+              <span className="text-xs text-gray-500 [writing-mode:vertical-lr]">
+                {allHighlights.length > 0 ? `${allHighlights.length} 高光` : '无高光'}
+              </span>
+            </div>
+          )}
         </div>
       </div>
     </div>

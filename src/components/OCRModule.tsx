@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { ocrApi } from '@/utils/api';
+import { usePolling } from '@/hooks/usePolling';
 import type { Document } from '@/types';
 
 // Types
@@ -84,11 +85,69 @@ export default function OCRModule({
   modelsReady = true,
 }: OCRModuleProps) {
   const [ocrFiles, setOcrFiles] = useState<OCRFile[]>([]);
-  const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [selectedOCRText, setSelectedOCRText] = useState<string>('');
   const [listCollapsed, setListCollapsed] = useState(false);
-  const [pollErrorCount, setPollErrorCount] = useState(0);
+
+  // Use polling hook for OCR progress (defined early so isProcessing is available)
+  const {
+    isPolling: isProcessing,
+    errorCount: pollErrorCount,
+    start: startPolling,
+    stop: stopPolling,
+  } = usePolling({
+    fetcher: () => ocrApi.getProgress(projectId),
+    shouldContinue: (progress) => progress.processing > 0 || progress.pending > 0,
+    interval: 2000,
+    errorRetryInterval: 5000,
+    maxErrorCount: 3,
+    maxDuration: 30 * 60 * 1000, // 30 minutes
+    enabled: false, // Manual start
+    onSuccess: (progress) => {
+      // Update file statuses
+      setOcrFiles(prev => prev.map(file => {
+        const docProgress = progress.documents?.find(d => d.id === file.id);
+        if (docProgress) {
+          return {
+            ...file,
+            status: docProgress.ocr_status as OCRFileStatus,
+          };
+        }
+        return file;
+      }));
+
+      // Check if polling is complete (no more processing/pending)
+      if (progress.processing === 0 && progress.pending === 0) {
+        onOCRComplete();
+        if (progress.failed > 0) {
+          onError(`OCR 完成: ${progress.completed} 成功, ${progress.failed} 失败`);
+        } else if (progress.completed > 0) {
+          onSuccess(`OCR 完成: ${progress.completed} 个文档已处理`);
+        }
+      }
+    },
+    onError: (err) => {
+      console.error('Failed to get OCR progress:', err);
+    },
+    onMaxErrors: () => {
+      onError('无法连接后端服务，请检查后端是否运行');
+      // Reset processing files to pending
+      setOcrFiles(prev => prev.map(f =>
+        f.status === 'processing' || f.status === 'queued'
+          ? { ...f, status: 'pending' as OCRFileStatus }
+          : f
+      ));
+    },
+    onTimeout: () => {
+      onError('OCR 处理超时，请检查后端状态');
+      // Reset processing files to pending
+      setOcrFiles(prev => prev.map(f =>
+        f.status === 'processing' || f.status === 'queued'
+          ? { ...f, status: 'pending' as OCRFileStatus }
+          : f
+      ));
+    },
+  });
 
   // Convert documents to OCR files
   useEffect(() => {
@@ -124,57 +183,6 @@ export default function OCRModule({
   const pendingCount = ocrFiles.filter(f => f.status === 'pending').length;
   const completedCount = ocrFiles.filter(f => f.status === 'completed').length;
 
-  // Poll OCR progress
-  const pollProgress = useCallback(async () => {
-    try {
-      const progress = await ocrApi.getProgress(projectId);
-      setPollErrorCount(0); // Reset error count on success
-
-      // Update file statuses
-      setOcrFiles(prev => prev.map(file => {
-        const docProgress = progress.documents?.find(d => d.id === file.id);
-        if (docProgress) {
-          return {
-            ...file,
-            status: docProgress.ocr_status as OCRFileStatus,
-          };
-        }
-        return file;
-      }));
-
-      // Continue polling if still processing
-      if (progress.processing > 0 || progress.pending > 0) {
-        setTimeout(pollProgress, 2000);
-      } else {
-        setIsProcessing(false);
-        onOCRComplete();
-        if (progress.failed > 0) {
-          onError(`OCR 完成: ${progress.completed} 成功, ${progress.failed} 失败`);
-        } else if (progress.completed > 0) {
-          onSuccess(`OCR 完成: ${progress.completed} 个文档已处理`);
-        }
-      }
-    } catch (err) {
-      console.error('Failed to get OCR progress:', err);
-      setPollErrorCount(prev => prev + 1);
-
-      // Stop polling after 3 consecutive errors
-      if (pollErrorCount >= 2) {
-        setIsProcessing(false);
-        onError('无法连接后端服务，请检查后端是否运行');
-        // Reset processing files to pending
-        setOcrFiles(prev => prev.map(f =>
-          f.status === 'processing' || f.status === 'queued'
-            ? { ...f, status: 'pending' as OCRFileStatus }
-            : f
-        ));
-      } else {
-        // Retry with longer delay
-        setTimeout(pollProgress, 5000);
-      }
-    }
-  }, [projectId, onOCRComplete, onSuccess, onError, pollErrorCount]);
-
   // Start OCR for single document
   const handleStartSingle = async (documentId: string) => {
     try {
@@ -182,12 +190,10 @@ export default function OCRModule({
         f.id === documentId ? { ...f, status: 'processing' as OCRFileStatus } : f
       ));
 
-      setPollErrorCount(0); // Reset error count
       await ocrApi.triggerSingle(documentId);
-      setIsProcessing(true);
 
-      // Start polling
-      setTimeout(pollProgress, 1000);
+      // Start polling with the hook
+      startPolling();
     } catch (error) {
       console.error('OCR failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
@@ -205,9 +211,6 @@ export default function OCRModule({
     if (pendingCount === 0) return;
 
     try {
-      setIsProcessing(true);
-      setPollErrorCount(0); // Reset error count
-
       // Mark all pending as queued
       setOcrFiles(prev => prev.map(f =>
         f.status === 'pending' ? { ...f, status: 'queued' as OCRFileStatus } : f
@@ -216,15 +219,14 @@ export default function OCRModule({
       await ocrApi.triggerBatch(projectId);
       onSuccess('OCR 处理已启动');
 
-      // Start polling
-      setTimeout(pollProgress, 1000);
+      // Start polling with the hook
+      startPolling();
     } catch (error) {
       console.error('Batch OCR failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
         ? '无法连接后端服务'
         : '批量 OCR 启动失败';
       onError(errorMsg);
-      setIsProcessing(false);
 
       // Reset queued to pending
       setOcrFiles(prev => prev.map(f =>
