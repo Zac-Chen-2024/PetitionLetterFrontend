@@ -40,10 +40,15 @@ const PlayIcon = () => (
   </svg>
 );
 
-const EyeIcon = () => (
+const ChevronLeftIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+);
+
+const ChevronRightIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
   </svg>
 );
 
@@ -52,26 +57,18 @@ const StatusIcon = ({ status }: { status: HighlightFileStatus }) => {
   switch (status) {
     case 'not_started':
     case 'pending':
-      return <span className="w-3 h-3 rounded-full bg-gray-300" title="待分析" />;
+      return <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" title="待分析" />;
     case 'processing':
       return (
-        <span className="w-3 h-3 rounded-full bg-yellow-500 animate-pulse" title="分析中" />
+        <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse flex-shrink-0" title="分析中" />
       );
     case 'completed':
       return (
-        <span className="w-3 h-3 rounded-full bg-green-500 flex items-center justify-center" title="完成">
-          <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-          </svg>
-        </span>
+        <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" title="完成" />
       );
     case 'failed':
       return (
-        <span className="w-3 h-3 rounded-full bg-red-500 flex items-center justify-center" title="失败">
-          <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </span>
+        <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" title="失败" />
       );
   }
 };
@@ -86,6 +83,7 @@ export default function HighlightModule({
   const [highlightFiles, setHighlightFiles] = useState<HighlightFile[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<HighlightFile | null>(null);
+  const [listCollapsed, setListCollapsed] = useState(false);
 
   // Filter to only show OCR completed documents
   useEffect(() => {
@@ -98,7 +96,12 @@ export default function HighlightModule({
       pageCount: doc.page_count || 1,
     }));
     setHighlightFiles(files);
-  }, [documents]);
+
+    // Auto-select first file if none selected
+    if (!selectedFile && files.length > 0) {
+      setSelectedFile(files[0]);
+    }
+  }, [documents, selectedFile]);
 
   // Load highlight status
   useEffect(() => {
@@ -139,7 +142,6 @@ export default function HighlightModule({
   // Get counts
   const pendingCount = highlightFiles.filter(f => f.status === 'pending' || f.status === 'not_started').length;
   const completedCount = highlightFiles.filter(f => f.status === 'completed').length;
-  const processingCount = highlightFiles.filter(f => f.status === 'processing').length;
 
   // Poll highlight progress
   const pollProgress = useCallback(async () => {
@@ -228,8 +230,8 @@ export default function HighlightModule({
     }
   };
 
-  // View highlight result
-  const handleViewResult = (file: HighlightFile) => {
+  // Select file to view
+  const handleSelectFile = (file: HighlightFile) => {
     setSelectedFile(file);
   };
 
@@ -258,109 +260,130 @@ export default function HighlightModule({
               <HighlightIcon />
             </div>
             <h3 className="text-base font-semibold text-gray-900">高光模块</h3>
+            <span className="text-xs text-gray-500">
+              {completedCount}/{highlightFiles.length} 已完成
+            </span>
           </div>
-          <StatusBadge status={moduleStatus} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleStartAll}
+              disabled={pendingCount === 0 || isProcessing}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 text-white text-xs font-medium rounded-lg hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <PlayIcon />
+              全部分析
+            </button>
+            <StatusBadge status={moduleStatus} />
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="p-5 space-y-4">
-        {/* Action Bar */}
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            可分析文件：<span className="font-medium text-gray-900">{pendingCount}</span>
-            {completedCount > 0 && (
-              <span className="ml-3 text-green-600">已完成: {completedCount}</span>
+      {/* Content - Left-Right Layout */}
+      <div className="flex" style={{ minHeight: '500px' }}>
+        {/* Left: File List (Collapsible) */}
+        <div
+          className={`border-r border-gray-200 flex flex-col transition-all duration-300 ${
+            listCollapsed ? 'w-10' : 'w-64'
+          }`}
+        >
+          {/* List Header */}
+          <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            {!listCollapsed && (
+              <span className="text-xs font-medium text-gray-600">文件列表</span>
             )}
-            {processingCount > 0 && (
-              <span className="ml-3 text-yellow-600">分析中: {processingCount}</span>
-            )}
+            <button
+              onClick={() => setListCollapsed(!listCollapsed)}
+              className="p-1 hover:bg-gray-200 rounded transition-colors"
+              title={listCollapsed ? '展开' : '折叠'}
+            >
+              {listCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+            </button>
           </div>
-          <button
-            onClick={handleStartAll}
-            disabled={pendingCount === 0 || isProcessing}
-            className="flex items-center gap-2 px-4 py-2 bg-yellow-500 text-white text-sm font-medium rounded-lg hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <PlayIcon />
-            全部分析
-          </button>
-        </div>
 
-        {/* File List */}
-        {highlightFiles.length === 0 ? (
-          <div className="border border-gray-200 rounded-lg bg-gray-50 p-6 text-center">
-            <p className="text-sm text-gray-500">暂无可分析的文件</p>
-            <p className="text-xs text-gray-400 mt-1">请先在 OCR 模块中完成文字识别</p>
-          </div>
-        ) : (
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="max-h-64 overflow-y-auto">
+          {/* File List */}
+          {!listCollapsed ? (
+            <div className="flex-1 overflow-y-auto">
+              {highlightFiles.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-400">
+                  暂无可分析的文件
+                  <p className="mt-1">请先完成 OCR</p>
+                </div>
+              ) : (
+                <div className="py-1">
+                  {highlightFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      onClick={() => handleSelectFile(file)}
+                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                        selectedFile?.id === file.id
+                          ? 'bg-yellow-50 border-r-2 border-yellow-500'
+                          : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <StatusIcon status={file.status} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-700 truncate">
+                          {file.exhibitNumber}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate" title={file.fileName}>
+                          {file.fileName}
+                        </p>
+                      </div>
+                      {(file.status === 'pending' || file.status === 'not_started') && !isProcessing && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartSingle(file);
+                          }}
+                          className="px-1.5 py-0.5 text-xs text-yellow-600 hover:bg-yellow-100 rounded transition-colors"
+                        >
+                          分析
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Collapsed view - show icons only
+            <div className="flex-1 overflow-y-auto py-1">
               {highlightFiles.map((file) => (
                 <div
                   key={file.id}
-                  className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors ${
-                    selectedFile?.id === file.id ? 'bg-yellow-50' : ''
+                  onClick={() => handleSelectFile(file)}
+                  className={`flex items-center justify-center py-2 cursor-pointer transition-colors ${
+                    selectedFile?.id === file.id ? 'bg-yellow-50' : 'hover:bg-gray-50'
                   }`}
+                  title={`${file.exhibitNumber}: ${file.fileName}`}
                 >
-                  {/* Status Icon */}
                   <StatusIcon status={file.status} />
-
-                  {/* File Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-gray-500">{file.exhibitNumber}:</span>
-                      <span className="text-sm text-gray-800 truncate">{file.fileName}</span>
-                    </div>
-                    {file.status === 'processing' && (
-                      <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden w-full max-w-xs">
-                        <div className="h-full bg-yellow-500 rounded-full animate-pulse" style={{ width: '60%' }} />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Status Text */}
-                  <span className={`text-xs ${
-                    file.status === 'completed' ? 'text-green-600' :
-                    file.status === 'processing' ? 'text-yellow-600' :
-                    file.status === 'failed' ? 'text-red-600' : 'text-gray-400'
-                  }`}>
-                    {file.status === 'completed' ? '完成' :
-                     file.status === 'processing' ? '分析中' :
-                     file.status === 'failed' ? '失败' : '待分析'}
-                  </span>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1">
-                    {(file.status === 'pending' || file.status === 'not_started') && !isProcessing && (
-                      <button
-                        onClick={() => handleStartSingle(file)}
-                        className="px-2.5 py-1 text-xs font-medium text-yellow-600 bg-yellow-50 rounded hover:bg-yellow-100 transition-colors"
-                      >
-                        分析
-                      </button>
-                    )}
-                    {file.status === 'completed' && (
-                      <button
-                        onClick={() => handleViewResult(file)}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded hover:bg-blue-100 transition-colors"
-                      >
-                        <EyeIcon />
-                        查看
-                      </button>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* PDF Preview with Highlights */}
-        <PDFHighlightViewer
-          documentId={selectedFile?.id || null}
-          documentName={selectedFile?.fileName}
-          pageCount={selectedFile?.pageCount || 1}
-        />
+        {/* Right: PDF Preview Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Preview Header */}
+          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+            <span className="text-xs font-medium text-gray-600">
+              {selectedFile
+                ? `PDF 预览 - ${selectedFile.exhibitNumber}: ${selectedFile.fileName}`
+                : 'PDF 预览'}
+            </span>
+          </div>
+
+          {/* Preview Content */}
+          <div className="flex-1 overflow-hidden p-4">
+            <PDFHighlightViewer
+              documentId={selectedFile?.id || null}
+              documentName={selectedFile?.fileName}
+              pageCount={selectedFile?.pageCount || 1}
+            />
+          </div>
+        </div>
       </div>
     </div>
   );
