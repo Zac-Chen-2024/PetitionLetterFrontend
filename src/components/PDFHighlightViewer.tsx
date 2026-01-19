@@ -57,7 +57,6 @@ const getCategoryColor = (category: string | null): string => {
 
 export default function PDFHighlightViewer({
   documentId,
-  documentName = 'Document',
   pageCount = 1,
 }: PDFHighlightViewerProps) {
   const [currentPage, setCurrentPage] = useState(1);
@@ -89,11 +88,6 @@ export default function PDFHighlightViewer({
         // Get highlights for this page
         const highlightData = await highlightApi.getHighlights(documentId, currentPage);
         setHighlights(highlightData.highlights || []);
-
-        // Update total pages if available
-        if (highlightData.file_name) {
-          // The API doesn't return page count directly here, we rely on prop
-        }
       } catch (err) {
         console.error('Failed to load page data:', err);
         setError('无法加载页面');
@@ -151,27 +145,23 @@ export default function PDFHighlightViewer({
 
   if (!documentId) {
     return (
-      <div className="border border-gray-200 rounded-lg bg-gray-50 p-8 text-center">
-        <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-lg flex items-center justify-center text-gray-400">
-          <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <div className="h-full flex items-center justify-center bg-gray-50 rounded-lg border border-gray-200">
+        <div className="text-center">
+          <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
+          <p className="text-sm text-gray-500">选择文件查看预览</p>
         </div>
-        <p className="text-sm text-gray-500">暂无文档预览</p>
-        <p className="text-xs text-gray-400 mt-1">选择一个已完成分析的文件查看高光结果</p>
       </div>
     );
   }
 
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
-      {/* Header */}
-      <div className="px-4 py-2.5 bg-gray-50 border-b border-gray-200 flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-700 truncate">
-          PDF 预览 + 高光 - {documentName}
-        </span>
+    <div className="h-full flex flex-col border border-gray-200 rounded-lg overflow-hidden bg-white">
+      {/* Toolbar */}
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+        {/* Zoom controls */}
         <div className="flex items-center gap-1">
-          {/* Zoom controls */}
           <button
             onClick={handleZoomOut}
             disabled={zoom <= 50}
@@ -189,19 +179,41 @@ export default function PDFHighlightViewer({
           >
             <ZoomInIcon />
           </button>
-          <div className="w-px h-4 bg-gray-300 mx-1" />
+        </div>
+
+        {/* Page navigation */}
+        <div className="flex items-center gap-2">
           <button
-            onClick={handleDownload}
-            className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
-            title="下载当前页"
+            onClick={handlePrevPage}
+            disabled={currentPage <= 1}
+            className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <DownloadIcon />
+            <ChevronLeftIcon />
+          </button>
+          <span className="text-sm text-gray-700 min-w-[60px] text-center">
+            {currentPage} / {totalPages}
+          </span>
+          <button
+            onClick={handleNextPage}
+            disabled={currentPage >= totalPages}
+            className="p-1 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <ChevronRightIcon />
           </button>
         </div>
+
+        {/* Download */}
+        <button
+          onClick={handleDownload}
+          className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
+          title="下载当前页"
+        >
+          <DownloadIcon />
+        </button>
       </div>
 
       {/* Content */}
-      <div className="relative bg-gray-100" style={{ minHeight: '400px' }}>
+      <div className="flex-1 overflow-auto bg-gray-100 relative">
         {loading ? (
           <div className="absolute inset-0 flex items-center justify-center">
             <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -211,9 +223,9 @@ export default function PDFHighlightViewer({
             <p className="text-sm text-red-500">{error}</p>
           </div>
         ) : imageUrl ? (
-          <div className="overflow-auto max-h-[500px]">
+          <div className="min-h-full flex items-start justify-center p-4">
             <div
-              className="relative mx-auto"
+              className="relative shadow-lg bg-white"
               style={{
                 transform: `scale(${zoom / 100})`,
                 transformOrigin: 'top center',
@@ -223,7 +235,7 @@ export default function PDFHighlightViewer({
               <img
                 src={imageUrl}
                 alt={`Page ${currentPage}`}
-                className="max-w-full h-auto shadow-lg"
+                className="max-w-full h-auto"
                 onError={() => setError('图片加载失败')}
               />
 
@@ -267,29 +279,6 @@ export default function PDFHighlightViewer({
         )}
       </div>
 
-      {/* Page Navigation */}
-      <div className="px-4 py-3 bg-gray-50 border-t border-gray-200 flex items-center justify-center gap-4">
-        <button
-          onClick={handlePrevPage}
-          disabled={currentPage <= 1}
-          className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <ChevronLeftIcon />
-        </button>
-        <span className="text-sm text-gray-700">
-          <span className="font-medium">{currentPage}</span>
-          <span className="text-gray-400 mx-1">/</span>
-          <span className="text-gray-500">{totalPages}</span>
-        </span>
-        <button
-          onClick={handleNextPage}
-          disabled={currentPage >= totalPages}
-          className="p-1.5 text-gray-600 hover:text-gray-900 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-        >
-          <ChevronRightIcon />
-        </button>
-      </div>
-
       {/* Highlight Details Panel */}
       {selectedHighlight && (
         <div className="px-4 py-3 bg-blue-50 border-t border-blue-200">
@@ -314,18 +303,18 @@ export default function PDFHighlightViewer({
                   </span>
                 )}
               </div>
-              <p className="text-sm text-gray-800 line-clamp-3">
+              <p className="text-sm text-gray-800 line-clamp-2">
                 {selectedHighlight.text_content || '无文本内容'}
               </p>
               {selectedHighlight.reason && (
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-gray-600 mt-1 line-clamp-1">
                   <span className="font-medium">原因:</span> {selectedHighlight.reason}
                 </p>
               )}
             </div>
             <button
               onClick={() => setSelectedHighlight(null)}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-1 text-gray-400 hover:text-gray-600 transition-colors flex-shrink-0"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -335,12 +324,10 @@ export default function PDFHighlightViewer({
         </div>
       )}
 
-      {/* Highlights List Summary */}
+      {/* Highlights count footer */}
       {highlights.length > 0 && (
-        <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-          <p className="text-xs text-gray-500">
-            当前页共 <span className="font-medium text-gray-700">{highlights.length}</span> 个高光区域
-          </p>
+        <div className="px-3 py-1.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 text-center">
+          当前页 {highlights.length} 个高光区域
         </div>
       )}
     </div>

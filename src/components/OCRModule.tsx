@@ -41,10 +41,15 @@ const PlayIcon = () => (
   </svg>
 );
 
-const EyeIcon = () => (
+const ChevronLeftIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+  </svg>
+);
+
+const ChevronRightIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
   </svg>
 );
 
@@ -52,28 +57,20 @@ const EyeIcon = () => (
 const StatusIcon = ({ status }: { status: OCRFileStatus }) => {
   switch (status) {
     case 'pending':
-      return <span className="w-3 h-3 rounded-full bg-gray-300" title="待处理" />;
+      return <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" title="待处理" />;
     case 'queued':
-      return <span className="w-3 h-3 rounded-full bg-yellow-400" title="队列中" />;
+      return <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 flex-shrink-0" title="队列中" />;
     case 'processing':
       return (
-        <span className="w-3 h-3 rounded-full bg-blue-500 animate-pulse" title="处理中" />
+        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0" title="处理中" />
       );
     case 'completed':
       return (
-        <span className="w-3 h-3 rounded-full bg-green-500 flex items-center justify-center" title="完成">
-          <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-          </svg>
-        </span>
+        <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" title="完成" />
       );
     case 'failed':
       return (
-        <span className="w-3 h-3 rounded-full bg-red-500 flex items-center justify-center" title="失败">
-          <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </span>
+        <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" title="失败" />
       );
   }
 };
@@ -89,6 +86,7 @@ export default function OCRModule({
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [selectedOCRText, setSelectedOCRText] = useState<string>('');
+  const [listCollapsed, setListCollapsed] = useState(false);
 
   // Convert documents to OCR files
   useEffect(() => {
@@ -100,7 +98,16 @@ export default function OCRModule({
       ocrText: doc.ocr_text,
     }));
     setOcrFiles(files);
-  }, [documents]);
+
+    // Auto-select first completed file if none selected
+    if (!selectedFileId) {
+      const firstCompleted = files.find(f => f.status === 'completed');
+      if (firstCompleted) {
+        setSelectedFileId(firstCompleted.id);
+        setSelectedOCRText(firstCompleted.ocrText || '');
+      }
+    }
+  }, [documents, selectedFileId]);
 
   // Get module status
   const getModuleStatus = (): ModuleStatus => {
@@ -114,7 +121,6 @@ export default function OCRModule({
   // Get pending files count
   const pendingCount = ocrFiles.filter(f => f.status === 'pending').length;
   const completedCount = ocrFiles.filter(f => f.status === 'completed').length;
-  const processingCount = ocrFiles.filter(f => f.status === 'processing').length;
 
   // Poll OCR progress
   const pollProgress = useCallback(async () => {
@@ -201,8 +207,8 @@ export default function OCRModule({
     }
   };
 
-  // View OCR result
-  const handleViewResult = (file: OCRFile) => {
+  // Select file to view
+  const handleSelectFile = (file: OCRFile) => {
     setSelectedFileId(file.id);
     setSelectedOCRText(file.ocrText || '');
   };
@@ -222,6 +228,8 @@ export default function OCRModule({
     );
   };
 
+  const selectedFile = ocrFiles.find(f => f.id === selectedFileId);
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       {/* Header */}
@@ -232,111 +240,143 @@ export default function OCRModule({
               <ScanIcon />
             </div>
             <h3 className="text-base font-semibold text-gray-900">OCR 模块</h3>
+            <span className="text-xs text-gray-500">
+              {completedCount}/{ocrFiles.length} 已完成
+            </span>
           </div>
-          <StatusBadge status={moduleStatus} />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleStartAll}
+              disabled={pendingCount === 0 || isProcessing}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <PlayIcon />
+              全部开始
+            </button>
+            <StatusBadge status={moduleStatus} />
+          </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="p-5 space-y-4">
-        {/* Action Bar */}
-        <div className="flex items-center justify-between">
-          <div className="text-sm text-gray-600">
-            待处理文件：<span className="font-medium text-gray-900">{pendingCount}</span>
-            {completedCount > 0 && (
-              <span className="ml-3 text-green-600">已完成: {completedCount}</span>
+      {/* Content - Left-Right Layout */}
+      <div className="flex" style={{ minHeight: '400px' }}>
+        {/* Left: File List (Collapsible) */}
+        <div
+          className={`border-r border-gray-200 flex flex-col transition-all duration-300 ${
+            listCollapsed ? 'w-10' : 'w-64'
+          }`}
+        >
+          {/* List Header */}
+          <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+            {!listCollapsed && (
+              <span className="text-xs font-medium text-gray-600">文件列表</span>
             )}
-            {processingCount > 0 && (
-              <span className="ml-3 text-blue-600">处理中: {processingCount}</span>
-            )}
+            <button
+              onClick={() => setListCollapsed(!listCollapsed)}
+              className="p-1 hover:bg-gray-200 rounded transition-colors"
+              title={listCollapsed ? '展开' : '折叠'}
+            >
+              {listCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
+            </button>
           </div>
-          <button
-            onClick={handleStartAll}
-            disabled={pendingCount === 0 || isProcessing}
-            className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white text-sm font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-          >
-            <PlayIcon />
-            全部开始
-          </button>
-        </div>
 
-        {/* File List */}
-        {ocrFiles.length === 0 ? (
-          <div className="border border-gray-200 rounded-lg bg-gray-50 p-6 text-center">
-            <p className="text-sm text-gray-500">暂无文件</p>
-            <p className="text-xs text-gray-400 mt-1">请先在上传模块中上传文件</p>
-          </div>
-        ) : (
-          <div className="border border-gray-200 rounded-lg overflow-hidden">
-            <div className="max-h-64 overflow-y-auto">
+          {/* File List */}
+          {!listCollapsed ? (
+            <div className="flex-1 overflow-y-auto">
+              {ocrFiles.length === 0 ? (
+                <div className="p-4 text-center text-xs text-gray-400">
+                  暂无文件
+                </div>
+              ) : (
+                <div className="py-1">
+                  {ocrFiles.map((file) => (
+                    <div
+                      key={file.id}
+                      onClick={() => file.status === 'completed' && handleSelectFile(file)}
+                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                        selectedFileId === file.id
+                          ? 'bg-purple-50 border-r-2 border-purple-500'
+                          : 'hover:bg-gray-50'
+                      } ${file.status !== 'completed' ? 'opacity-60' : ''}`}
+                    >
+                      <StatusIcon status={file.status} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-medium text-gray-700 truncate">
+                          {file.exhibitNumber}
+                        </p>
+                        <p className="text-xs text-gray-500 truncate" title={file.fileName}>
+                          {file.fileName}
+                        </p>
+                      </div>
+                      {file.status === 'pending' && !isProcessing && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStartSingle(file.id);
+                          }}
+                          className="px-1.5 py-0.5 text-xs text-purple-600 hover:bg-purple-100 rounded transition-colors"
+                        >
+                          开始
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            // Collapsed view - show icons only
+            <div className="flex-1 overflow-y-auto py-1">
               {ocrFiles.map((file) => (
                 <div
                   key={file.id}
-                  className={`flex items-center gap-3 px-4 py-3 border-b border-gray-100 last:border-b-0 hover:bg-gray-50 transition-colors ${
-                    selectedFileId === file.id ? 'bg-purple-50' : ''
+                  onClick={() => file.status === 'completed' && handleSelectFile(file)}
+                  className={`flex items-center justify-center py-2 cursor-pointer transition-colors ${
+                    selectedFileId === file.id ? 'bg-purple-50' : 'hover:bg-gray-50'
                   }`}
+                  title={`${file.exhibitNumber}: ${file.fileName}`}
                 >
-                  {/* Status Icon */}
                   <StatusIcon status={file.status} />
-
-                  {/* File Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-medium text-gray-500">{file.exhibitNumber}:</span>
-                      <span className="text-sm text-gray-800 truncate">{file.fileName}</span>
-                    </div>
-                    {file.status === 'processing' && (
-                      <div className="mt-1 h-1 bg-gray-200 rounded-full overflow-hidden w-full max-w-xs">
-                        <div className="h-full bg-blue-500 rounded-full animate-pulse" style={{ width: '60%' }} />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Status Text */}
-                  <span className={`text-xs ${
-                    file.status === 'completed' ? 'text-green-600' :
-                    file.status === 'processing' ? 'text-blue-600' :
-                    file.status === 'queued' ? 'text-yellow-600' :
-                    file.status === 'failed' ? 'text-red-600' : 'text-gray-400'
-                  }`}>
-                    {file.status === 'completed' ? '完成' :
-                     file.status === 'processing' ? '处理中' :
-                     file.status === 'queued' ? '队列中' :
-                     file.status === 'failed' ? '失败' : '待处理'}
-                  </span>
-
-                  {/* Actions */}
-                  <div className="flex items-center gap-1">
-                    {file.status === 'pending' && !isProcessing && (
-                      <button
-                        onClick={() => handleStartSingle(file.id)}
-                        className="px-2.5 py-1 text-xs font-medium text-purple-600 bg-purple-50 rounded hover:bg-purple-100 transition-colors"
-                      >
-                        开始
-                      </button>
-                    )}
-                    {file.status === 'completed' && (
-                      <button
-                        onClick={() => handleViewResult(file)}
-                        className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-blue-600 bg-blue-50 rounded hover:bg-blue-100 transition-colors"
-                      >
-                        <EyeIcon />
-                        查看
-                      </button>
-                    )}
-                  </div>
                 </div>
               ))}
             </div>
-          </div>
-        )}
+          )}
+        </div>
 
-        {/* OCR Result Preview */}
-        <MarkdownPreview
-          content={selectedOCRText}
-          title={selectedFileId ? `OCR 结果预览 - ${ocrFiles.find(f => f.id === selectedFileId)?.fileName || ''}` : 'OCR 结果预览'}
-          maxHeight="250px"
-        />
+        {/* Right: Preview Area */}
+        <div className="flex-1 flex flex-col min-w-0">
+          {/* Preview Header */}
+          <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
+            <span className="text-xs font-medium text-gray-600">
+              {selectedFile
+                ? `OCR 结果 - ${selectedFile.exhibitNumber}: ${selectedFile.fileName}`
+                : 'OCR 结果预览'}
+            </span>
+          </div>
+
+          {/* Preview Content */}
+          <div className="flex-1 overflow-hidden">
+            {selectedOCRText ? (
+              <div className="h-full overflow-y-auto p-4">
+                <MarkdownPreview
+                  content={selectedOCRText}
+                  title=""
+                  maxHeight="none"
+                  showCopyButton={true}
+                />
+              </div>
+            ) : (
+              <div className="h-full flex items-center justify-center text-gray-400">
+                <div className="text-center">
+                  <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  </svg>
+                  <p className="text-sm">选择一个已完成 OCR 的文件查看结果</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
