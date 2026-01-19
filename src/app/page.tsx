@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { projectApi, documentApi, healthApi, type Project, type PreloadStatus } from '@/utils/api';
+import { usePolling } from '@/hooks/usePolling';
 import type { Document } from '@/types';
 import UploadModule from '@/components/UploadModule';
 import OCRModule from '@/components/OCRModule';
@@ -102,9 +103,6 @@ export default function App() {
   // Backend status
   const [backendStatus, setBackendStatus] = useState<'checking' | 'online' | 'offline'>('checking');
 
-  // Model preload status
-  const [preloadStatus, setPreloadStatus] = useState<PreloadStatus | null>(null);
-
   // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null);
 
@@ -121,22 +119,18 @@ export default function App() {
     }
   }, []);
 
-  // Poll model preload status
-  const pollPreloadStatus = useCallback(async () => {
-    try {
-      const status = await healthApi.getPreloadStatus();
-      setPreloadStatus(status);
-
-      // Continue polling if still loading
-      if (status.is_loading && !status.is_ready) {
-        setTimeout(() => pollPreloadStatus(), 2000);
-      }
-    } catch (error) {
+  // Poll model preload status using the usePolling hook
+  const { data: preloadStatus } = usePolling<PreloadStatus>({
+    fetcher: () => healthApi.getPreloadStatus(),
+    shouldContinue: (status) => status.is_loading && !status.is_ready,
+    interval: 2000,
+    errorRetryInterval: 5000,
+    maxErrorCount: 5,
+    enabled: true, // Auto-start on mount
+    onError: (error) => {
       console.error('Failed to get preload status:', error);
-      // Retry on error
-      setTimeout(() => pollPreloadStatus(), 5000);
-    }
-  }, []);
+    },
+  });
 
   // ============================================================================
   // EFFECTS
@@ -150,8 +144,8 @@ export default function App() {
     );
     loadProjects();
     checkBackendStatus();
-    pollPreloadStatus();
-  }, [checkBackendStatus, pollPreloadStatus]);
+    // pollPreloadStatus is now handled by usePolling hook with enabled: true
+  }, [checkBackendStatus]);
 
   useEffect(() => {
     if (currentProject) {
