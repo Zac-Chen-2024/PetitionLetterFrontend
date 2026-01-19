@@ -84,6 +84,7 @@ export default function HighlightModule({
   const [isProcessing, setIsProcessing] = useState(false);
   const [selectedFile, setSelectedFile] = useState<HighlightFile | null>(null);
   const [listCollapsed, setListCollapsed] = useState(false);
+  const [pollErrorCount, setPollErrorCount] = useState(0);
 
   // Filter to only show OCR completed documents
   useEffect(() => {
@@ -147,6 +148,7 @@ export default function HighlightModule({
   const pollProgress = useCallback(async () => {
     try {
       const progress = await highlightApi.getProgress(projectId);
+      setPollErrorCount(0); // Reset error count on success
 
       // Update file statuses
       setHighlightFiles(prev => prev.map(file => {
@@ -168,15 +170,30 @@ export default function HighlightModule({
         onHighlightComplete();
         if (progress.failed > 0) {
           onError(`高光分析完成: ${progress.completed} 成功, ${progress.failed} 失败`);
-        } else {
+        } else if (progress.completed > 0) {
           onSuccess(`高光分析完成: ${progress.completed} 个文档已处理`);
         }
       }
     } catch (err) {
       console.error('Failed to get highlight progress:', err);
-      setTimeout(pollProgress, 3000);
+      setPollErrorCount(prev => prev + 1);
+
+      // Stop polling after 3 consecutive errors
+      if (pollErrorCount >= 2) {
+        setIsProcessing(false);
+        onError('无法连接后端服务，请检查后端是否运行');
+        // Reset processing files to pending
+        setHighlightFiles(prev => prev.map(f =>
+          f.status === 'processing'
+            ? { ...f, status: 'pending' as HighlightFileStatus }
+            : f
+        ));
+      } else {
+        // Retry with longer delay
+        setTimeout(pollProgress, 5000);
+      }
     }
-  }, [projectId, onHighlightComplete, onSuccess, onError]);
+  }, [projectId, onHighlightComplete, onSuccess, onError, pollErrorCount]);
 
   // Start highlight for single document
   const handleStartSingle = async (file: HighlightFile) => {
@@ -185,6 +202,7 @@ export default function HighlightModule({
         f.id === file.id ? { ...f, status: 'processing' as HighlightFileStatus } : f
       ));
 
+      setPollErrorCount(0); // Reset error count
       await highlightApi.trigger(file.id);
       setIsProcessing(true);
 
@@ -192,9 +210,12 @@ export default function HighlightModule({
       setTimeout(pollProgress, 1000);
     } catch (error) {
       console.error('Highlight failed:', error);
-      onError('高光分析启动失败');
+      const errorMsg = error instanceof Error && error.message.includes('fetch')
+        ? '无法连接后端服务'
+        : '高光分析启动失败';
+      onError(errorMsg);
       setHighlightFiles(prev => prev.map(f =>
-        f.id === file.id ? { ...f, status: 'failed' as HighlightFileStatus } : f
+        f.id === file.id ? { ...f, status: 'pending' as HighlightFileStatus } : f
       ));
     }
   };
@@ -205,6 +226,7 @@ export default function HighlightModule({
 
     try {
       setIsProcessing(true);
+      setPollErrorCount(0); // Reset error count
 
       // Mark all pending as processing
       setHighlightFiles(prev => prev.map(f =>
@@ -220,7 +242,10 @@ export default function HighlightModule({
       setTimeout(pollProgress, 1000);
     } catch (error) {
       console.error('Batch highlight failed:', error);
-      onError('批量高光分析启动失败');
+      const errorMsg = error instanceof Error && error.message.includes('fetch')
+        ? '无法连接后端服务'
+        : '批量高光分析启动失败';
+      onError(errorMsg);
       setIsProcessing(false);
 
       // Reset processing to pending
