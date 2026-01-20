@@ -7,6 +7,8 @@ import type { Document } from '@/types';
 import UploadModule from '@/components/UploadModule';
 import OCRModule from '@/components/OCRModule';
 import HighlightModule from '@/components/HighlightModule';
+import L1AnalysisModule from '@/components/L1AnalysisModule';
+import RelationshipModule from '@/components/RelationshipModule';
 
 // ============================================================================
 // VERSION INFO
@@ -459,11 +461,25 @@ export default function App() {
                 modelsReady={preloadStatus?.is_ready ?? false}
               />
 
+              {/* Module 4: L-1 Analysis */}
+              <L1AnalysisModule
+                projectId={currentProject.id}
+                onSuccess={handleSuccess}
+                onError={handleError}
+              />
+
+              {/* Module 5: Relationship Analysis */}
+              <RelationshipModule
+                projectId={currentProject.id}
+                onSuccess={handleSuccess}
+                onError={handleError}
+              />
+
               {/* Future Modules Placeholder */}
               <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
                 <p className="text-sm text-gray-500">后续模块</p>
                 <p className="text-xs text-gray-400 mt-1">
-                  高光分析 → 关系分析 → Petition Letter 写作
+                  Petition Letter 写作
                 </p>
               </div>
             </div>
