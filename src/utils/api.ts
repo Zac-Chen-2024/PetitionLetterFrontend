@@ -323,21 +323,40 @@ export interface HighlightProgressResponse {
 }
 
 // L-1 Analysis APIs
+// L1 Analysis Progress type for SSE
+export interface L1ProgressResponse {
+  project_id: string;
+  status: 'idle' | 'processing' | 'completed';
+  total: number;
+  completed: number;
+  progress_percent: number;
+  current_doc: {
+    document_id: string;
+    file_name: string;
+    exhibit_id: string;
+  } | null;
+  errors: { document_id: string; exhibit_id: string; error: string }[];
+  total_quotes_found: number;
+  model_used: string;
+}
+
 export const analysisApi = {
+  // SSE stream URL for L1 analysis progress
+  getStreamUrl: (projectId: string) => `${API_BASE}/api/l1-analyze/stream/${projectId}`,
+
   // Get L-1 standards info
   getStandards: () =>
     fetchApi<{ standards: Record<string, unknown>; count: number }>('/api/l1-standards'),
 
-  // Run automatic L-1 analysis
+  // Run automatic L-1 analysis (now returns immediately, runs in background)
   analyzeDocuments: (projectId: string, docIds?: string[]) => {
     const params = docIds && docIds.length > 0 ? `?doc_ids=${docIds.join(',')}` : '';
     return fetchApi<{
       success: boolean;
+      message: string;
       project_id: string;
-      total_docs_analyzed: number;
-      total_quotes_found: number;
-      errors?: { document_id: string; error: string }[];
-      model_used: string;
+      total: number;
+      documents: { id: string; file_name: string; exhibit_id: string }[];
     }>(`/api/l1-analyze/${projectId}${params}`, { method: 'POST' });
   },
 
@@ -476,15 +495,27 @@ interface RelationshipGraph {
   }>;
 }
 
+// Relationship Progress type for SSE
+export interface RelationshipProgressResponse {
+  project_id: string;
+  status: 'idle' | 'processing' | 'completed' | 'failed';
+  error: string | null;
+  result?: RelationshipGraph;
+}
+
 // Relationship Analysis APIs
 export const relationshipApi = {
-  // Analyze relationships across documents (auto mode)
+  // SSE stream URL for relationship analysis progress
+  getStreamUrl: (projectId: string) => `${API_BASE}/api/relationship/stream/${projectId}`,
+
+  // Analyze relationships across documents (auto mode) - now runs in background
   analyze: (projectId: string, beneficiaryName?: string) => {
     const params = beneficiaryName ? `?beneficiary_name=${encodeURIComponent(beneficiaryName)}` : '';
     return fetchApi<{
       success: boolean;
+      message: string;
       project_id: string;
-      graph: RelationshipGraph;
+      documents_count: number;
     }>(`/api/relationship/${projectId}${params}`, { method: 'POST' });
   },
 
