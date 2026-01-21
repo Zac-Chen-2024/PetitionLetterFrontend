@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { relationshipApi } from '@/utils/api';
+import { useState, useEffect, useCallback } from 'react';
+import { relationshipApi, RelationshipProgressResponse } from '@/utils/api';
+import { useSSE } from '@/hooks/useSSE';
 
 // Types
 type ModuleStatus = 'idle' | 'processing' | 'completed' | 'error';
@@ -285,6 +286,41 @@ export default function RelationshipModule({
   const [graph, setGraph] = useState<RelationshipGraph | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // SSE URL for progress monitoring
+  const sseUrl = projectId ? relationshipApi.getStreamUrl(projectId) : null;
+
+  // SSE handlers
+  const handleSSEProgress = useCallback((data: RelationshipProgressResponse) => {
+    if (data.status === 'processing') {
+      setStatus('processing');
+    }
+  }, []);
+
+  const handleSSEComplete = useCallback((data: RelationshipProgressResponse) => {
+    if (data.status === 'completed' && data.result) {
+      setGraph(data.result);
+      setStatus('completed');
+      onSuccess?.(`关系分析完成: 识别了 ${data.result.entities?.length || 0} 个实体，${data.result.relations?.length || 0} 条关系`);
+    } else if (data.status === 'failed') {
+      setStatus('error');
+      onError?.(data.error || '关系分析失败');
+    }
+  }, [onSuccess, onError]);
+
+  const handleSSEError = useCallback(() => {
+    // SSE connection error - might reconnect automatically
+    console.warn('Relationship SSE connection error');
+  }, []);
+
+  // SSE hook
+  const { connect, disconnect } = useSSE<RelationshipProgressResponse>({
+    url: sseUrl,
+    onMessage: handleSSEProgress,
+    onComplete: handleSSEComplete,
+    onError: handleSSEError,
+    autoConnect: false,
+  });
+
   // Load existing analysis on mount
   useEffect(() => {
     if (projectId) {
@@ -293,7 +329,11 @@ export default function RelationshipModule({
       setGraph(null);
       setStatus('idle');
     }
-  }, [projectId]);
+
+    return () => {
+      disconnect();
+    };
+  }, [projectId, disconnect]);
 
   const loadExistingAnalysis = async () => {
     if (!projectId) return;
@@ -325,21 +365,20 @@ export default function RelationshipModule({
     try {
       setStatus('processing');
 
-      // Trigger analysis
+      // Trigger analysis (now returns immediately)
       const result = await relationshipApi.analyze(projectId);
 
-      if (result.success && result.graph) {
-        setGraph(result.graph);
-        setStatus('completed');
-        onSuccess?.(`关系分析完成: 识别了 ${result.graph.entities.length} 个实体，${result.graph.relations.length} 条关系`);
+      if (result.success) {
+        // Connect to SSE for progress updates
+        connect();
       } else {
-        throw new Error('Analysis failed');
+        throw new Error('Failed to start analysis');
       }
     } catch (err) {
       console.error('Relationship analysis failed:', err);
       const errorMsg = err instanceof Error && err.message.includes('fetch')
         ? '无法连接后端服务'
-        : '关系分析失败';
+        : '关系分析启动失败';
       onError?.(errorMsg);
       setStatus('error');
     }

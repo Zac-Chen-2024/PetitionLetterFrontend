@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { relationshipApi } from '@/utils/api';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { relationshipApi, RelationshipProgressResponse } from '@/utils/api';
+import { useSSE } from '@/hooks/useSSE';
 import type { Quote } from '@/types';
 
 export interface Entity {
@@ -121,10 +122,46 @@ export default function RelationshipPanel({
 
   const totalQuotes = Object.values(quotesByStandard).flat().length;
 
+  // SSE URL for progress monitoring
+  const sseUrl = projectId ? relationshipApi.getStreamUrl(projectId) : null;
+
+  // SSE handlers
+  const handleSSEProgress = useCallback(() => {
+    // Processing - keep isAnalyzing true
+  }, []);
+
+  const handleSSEComplete = useCallback((data: RelationshipProgressResponse) => {
+    setIsAnalyzing(false);
+    if (data.status === 'completed' && data.result) {
+      setGraph(data.result);
+      onSuccess(`Analyzed relationships: ${data.result.entities?.length || 0} entities, ${data.result.relations?.length || 0} relations`);
+      onAnalysisComplete?.(data.result);
+    } else if (data.status === 'failed') {
+      onError(data.error || 'Relationship analysis failed');
+    }
+  }, [onSuccess, onError, onAnalysisComplete]);
+
+  const handleSSEError = useCallback(() => {
+    // SSE connection error - might reconnect automatically
+    console.warn('Relationship SSE connection error');
+  }, []);
+
+  // SSE hook
+  const { connect, disconnect } = useSSE<RelationshipProgressResponse>({
+    url: sseUrl,
+    onMessage: handleSSEProgress,
+    onComplete: handleSSEComplete,
+    onError: handleSSEError,
+    autoConnect: false,
+  });
+
   // Load existing relationship analysis on mount
   useEffect(() => {
     loadExistingAnalysis();
-  }, [projectId]);
+    return () => {
+      disconnect();
+    };
+  }, [projectId, disconnect]);
 
   const loadExistingAnalysis = async () => {
     try {
@@ -219,16 +256,15 @@ export default function RelationshipPanel({
       setIsAnalyzing(true);
       const result = await relationshipApi.analyze(projectId, beneficiaryName || undefined);
 
-      if (result.success && result.graph) {
-        setGraph(result.graph);
-        onSuccess(`Analyzed relationships: ${result.graph.entities.length} entities, ${result.graph.relations.length} relations`);
-        // Notify parent of analysis completion for entity name extraction
-        onAnalysisComplete?.(result.graph);
+      if (result.success) {
+        // Connect to SSE for progress updates
+        connect();
+      } else {
+        throw new Error('Failed to start relationship analysis');
       }
     } catch (error) {
       console.error('Relationship analysis failed:', error);
       onError('Relationship analysis failed. Check your API connection.');
-    } finally {
       setIsAnalyzing(false);
     }
   };

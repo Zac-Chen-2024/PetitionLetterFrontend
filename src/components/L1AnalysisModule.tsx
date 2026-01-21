@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { analysisApi } from '@/utils/api';
+import { useState, useEffect, useCallback } from 'react';
+import { analysisApi, L1ProgressResponse } from '@/utils/api';
+import { useSSE } from '@/hooks/useSSE';
 import type { L1Summary, Quote, L1StandardKey } from '@/types';
 import { L1_STANDARDS } from '@/types';
 
@@ -150,6 +151,50 @@ export default function L1AnalysisModule({
   const [status, setStatus] = useState<ModuleStatus>('idle');
   const [summary, setSummary] = useState<L1Summary | null>(null);
   const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState<L1ProgressResponse | null>(null);
+
+  // SSE URL for progress monitoring
+  const sseUrl = projectId ? analysisApi.getStreamUrl(projectId) : null;
+
+  // SSE handlers
+  const handleSSEProgress = useCallback((data: L1ProgressResponse) => {
+    setProgress(data);
+    if (data.status === 'processing') {
+      setStatus('processing');
+    }
+  }, []);
+
+  const handleSSEComplete = useCallback(async (data: L1ProgressResponse) => {
+    setProgress(data);
+
+    if (data.status === 'completed' && projectId) {
+      try {
+        // Generate and load summary
+        await analysisApi.generateSummary(projectId);
+        const summaryResult = await analysisApi.getSummary(projectId);
+        setSummary(summaryResult);
+        setStatus('completed');
+        onSuccess?.(`L-1 分析完成: 分析了 ${data.completed} 个文档，找到 ${data.total_quotes_found} 条引用`);
+      } catch (err) {
+        console.error('Failed to generate summary:', err);
+        setStatus('completed'); // Still mark as completed, summary might be available
+      }
+    }
+  }, [projectId, onSuccess]);
+
+  const handleSSEError = useCallback(() => {
+    // SSE connection error - might reconnect automatically
+    console.warn('L1 SSE connection error');
+  }, []);
+
+  // SSE hook
+  const { isConnected, connect, disconnect } = useSSE<L1ProgressResponse>({
+    url: sseUrl,
+    onMessage: handleSSEProgress,
+    onComplete: handleSSEComplete,
+    onError: handleSSEError,
+    autoConnect: false,
+  });
 
   // Load existing analysis on mount
   useEffect(() => {
@@ -158,8 +203,13 @@ export default function L1AnalysisModule({
     } else {
       setSummary(null);
       setStatus('idle');
+      setProgress(null);
     }
-  }, [projectId]);
+
+    return () => {
+      disconnect();
+    };
+  }, [projectId, disconnect]);
 
   const loadExistingAnalysis = async () => {
     if (!projectId) return;
@@ -191,26 +241,22 @@ export default function L1AnalysisModule({
 
     try {
       setStatus('processing');
+      setProgress(null);
 
-      // Trigger analysis
+      // Trigger analysis (now returns immediately)
       const result = await analysisApi.analyzeDocuments(projectId);
 
       if (result.success) {
-        onSuccess?.(`L-1 分析完成: 分析了 ${result.total_docs_analyzed} 个文档，找到 ${result.total_quotes_found} 条引用`);
-
-        // Generate and load summary
-        await analysisApi.generateSummary(projectId);
-        const summaryResult = await analysisApi.getSummary(projectId);
-        setSummary(summaryResult);
-        setStatus('completed');
+        // Connect to SSE for progress updates
+        connect();
       } else {
-        throw new Error('Analysis failed');
+        throw new Error('Failed to start analysis');
       }
     } catch (err) {
       console.error('L-1 analysis failed:', err);
       const errorMsg = err instanceof Error && err.message.includes('fetch')
         ? '无法连接后端服务'
-        : 'L-1 分析失败';
+        : 'L-1 分析启动失败';
       onError?.(errorMsg);
       setStatus('error');
     }
@@ -275,6 +321,52 @@ export default function L1AnalysisModule({
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
             <span className="ml-2 text-sm text-gray-500">加载中...</span>
+          </div>
+        ) : status === 'processing' ? (
+          <div className="py-6">
+            {/* Progress bar */}
+            <div className="mb-4">
+              <div className="flex justify-between text-sm mb-2">
+                <span className="text-gray-600">
+                  分析进度: {progress?.completed || 0}/{progress?.total || 0} 个文档
+                </span>
+                <span className="text-indigo-600 font-medium">
+                  {progress?.progress_percent || 0}%
+                </span>
+              </div>
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${progress?.progress_percent || 0}%` }}
+                />
+              </div>
+            </div>
+
+            {/* Current document */}
+            {progress?.current_doc && (
+              <div className="bg-indigo-50 rounded-lg p-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+                  <span className="text-sm text-indigo-700">
+                    正在分析: {progress.current_doc.exhibit_id} - {progress.current_doc.file_name}
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Stats so far */}
+            {progress && progress.total_quotes_found > 0 && (
+              <div className="text-center text-sm text-gray-500">
+                已找到 {progress.total_quotes_found} 条引用
+              </div>
+            )}
+
+            {/* Errors */}
+            {progress?.errors && progress.errors.length > 0 && (
+              <div className="mt-3 text-sm text-red-600">
+                {progress.errors.length} 个文档分析失败
+              </div>
+            )}
           </div>
         ) : status === 'idle' ? (
           <div className="text-center py-8 text-gray-400">
