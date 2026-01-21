@@ -225,8 +225,10 @@ export default function App() {
   // ============================================================================
   // HANDLERS
   // ============================================================================
-  const handleUploadComplete = () => {
-    loadDocuments();
+  const handleUploadComplete = async () => {
+    // 延迟 500ms 确保后端处理完成
+    await new Promise(resolve => setTimeout(resolve, 500));
+    await loadDocuments();
   };
 
   const handleOCRComplete = () => {
