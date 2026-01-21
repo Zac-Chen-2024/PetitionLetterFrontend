@@ -309,6 +309,19 @@ export interface OCRProgressResponse {
   }>;
 }
 
+// Highlight Progress response type (used by both polling and SSE)
+export interface HighlightProgressResponse {
+  project_id: string;
+  total: number;
+  not_started: number;
+  pending: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  progress_percent: number;
+  documents: DocumentHighlightInfo[];
+}
+
 // L-1 Analysis APIs
 export const analysisApi = {
   // Get L-1 standards info
@@ -690,17 +703,10 @@ export const highlightApi = {
 
   // Get project highlight progress
   getProgress: (projectId: string) =>
-    fetchApi<{
-      project_id: string;
-      total: number;
-      not_started: number;
-      pending: number;
-      processing: number;
-      completed: number;
-      failed: number;
-      progress_percent: number;
-      documents: DocumentHighlightInfo[];
-    }>(`/api/highlight/progress/${projectId}`),
+    fetchApi<HighlightProgressResponse>(`/api/highlight/progress/${projectId}`),
+
+  // Get SSE stream URL for highlight progress
+  getStreamUrl: (projectId: string) => `${API_BASE}/api/highlight/stream/${projectId}`,
 
   // Get document page as image
   getPageImage: (documentId: string, pageNumber: number, dpi?: number) => {

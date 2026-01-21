@@ -1,10 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { highlightApi, type DocumentHighlightInfo, type HighlightItem } from '@/utils/api';
+import { useState, useEffect, useCallback } from 'react';
+import { highlightApi, type DocumentHighlightInfo, type HighlightItem, type HighlightProgressResponse } from '@/utils/api';
+import { useSSE } from '@/hooks/useSSE';
 import { usePolling } from '@/hooks/usePolling';
 import type { Document } from '@/types';
 import PDFHighlightViewer from './PDFHighlightViewer';
+
+// SSE support detection
+const supportsSSE = typeof window !== 'undefined' && typeof EventSource !== 'undefined';
 
 // Types
 export type HighlightFileStatus = 'pending' | 'processing' | 'completed' | 'failed' | 'not_started';
@@ -87,6 +91,7 @@ export default function HighlightModule({
   const [selectedFile, setSelectedFile] = useState<HighlightFile | null>(null);
   const [listCollapsed, setListCollapsed] = useState(false);
   const [rightPanelCollapsed, setRightPanelCollapsed] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
   // Highlight list state
   const [allHighlights, setAllHighlights] = useState<HighlightItem[]>([]);
@@ -94,11 +99,54 @@ export default function HighlightModule({
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedHighlightId, setSelectedHighlightId] = useState<string | null>(null);
 
-  // Use polling hook for highlight progress (defined early so isProcessing is available)
+  // SSE stream URL
+  const sseUrl = projectId ? highlightApi.getStreamUrl(projectId) : null;
+
+  // Handle progress update (shared by SSE and polling)
+  const handleProgressUpdate = useCallback((progress: HighlightProgressResponse) => {
+    setHighlightFiles(prev => prev.map(file => {
+      const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
+      if (docInfo) {
+        return {
+          ...file,
+          status: (docInfo.highlight_status || 'pending') as HighlightFileStatus,
+        };
+      }
+      return file;
+    }));
+  }, []);
+
+  // Handle highlight complete (shared by SSE and polling)
+  const handleHighlightDone = useCallback((progress: HighlightProgressResponse) => {
+    setIsProcessing(false);
+    onHighlightComplete();
+    if (progress.failed > 0) {
+      onError(`高光分析完成: ${progress.completed} 成功, ${progress.failed} 失败`);
+    } else if (progress.completed > 0) {
+      onSuccess(`高光分析完成: ${progress.completed} 个文档已处理`);
+    }
+  }, [onHighlightComplete, onError, onSuccess]);
+
+  // Use SSE hook for real-time progress (primary method)
   const {
-    isPolling: isProcessing,
+    isConnected: sseConnected,
+    connect: sseConnect,
+    disconnect: sseDisconnect,
+  } = useSSE<HighlightProgressResponse>({
+    url: supportsSSE ? sseUrl : null,
+    onMessage: handleProgressUpdate,
+    onComplete: handleHighlightDone,
+    onError: (event) => {
+      console.error('[Highlight SSE] Connection error:', event);
+    },
+  });
+
+  // Fallback: Use polling hook for highlight progress
+  const {
+    isPolling,
     errorCount: pollErrorCount,
     start: startPolling,
+    stop: stopPolling,
   } = usePolling({
     fetcher: () => highlightApi.getProgress(projectId),
     shouldContinue: (progress) => progress.processing > 0 || progress.pending > 0,
@@ -108,34 +156,17 @@ export default function HighlightModule({
     maxDuration: 30 * 60 * 1000, // 30 minutes
     enabled: false, // Manual start
     onSuccess: (progress) => {
-      // Update file statuses
-      setHighlightFiles(prev => prev.map(file => {
-        const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
-        if (docInfo) {
-          return {
-            ...file,
-            status: (docInfo.highlight_status || 'pending') as HighlightFileStatus,
-          };
-        }
-        return file;
-      }));
-
-      // Check if polling is complete (no more processing/pending)
+      handleProgressUpdate(progress);
       if (progress.processing === 0 && progress.pending === 0) {
-        onHighlightComplete();
-        if (progress.failed > 0) {
-          onError(`高光分析完成: ${progress.completed} 成功, ${progress.failed} 失败`);
-        } else if (progress.completed > 0) {
-          onSuccess(`高光分析完成: ${progress.completed} 个文档已处理`);
-        }
+        handleHighlightDone(progress);
       }
     },
     onError: (err) => {
       console.error('Failed to get highlight progress:', err);
     },
     onMaxErrors: () => {
+      setIsProcessing(false);
       onError('无法连接后端服务，请检查后端是否运行');
-      // Reset processing files to pending
       setHighlightFiles(prev => prev.map(f =>
         f.status === 'processing'
           ? { ...f, status: 'pending' as HighlightFileStatus }
@@ -143,8 +174,8 @@ export default function HighlightModule({
       ));
     },
     onTimeout: () => {
+      setIsProcessing(false);
       onError('高光分析处理超时，请检查后端状态');
-      // Reset processing files to pending
       setHighlightFiles(prev => prev.map(f =>
         f.status === 'processing'
           ? { ...f, status: 'pending' as HighlightFileStatus }
@@ -152,6 +183,26 @@ export default function HighlightModule({
       ));
     },
   });
+
+  // Start monitoring (SSE or polling)
+  const startMonitoring = useCallback(() => {
+    setIsProcessing(true);
+    if (supportsSSE) {
+      sseConnect();
+    } else {
+      startPolling();
+    }
+  }, [sseConnect, startPolling]);
+
+  // Stop monitoring
+  const stopMonitoring = useCallback(() => {
+    setIsProcessing(false);
+    if (supportsSSE) {
+      sseDisconnect();
+    } else {
+      stopPolling();
+    }
+  }, [sseDisconnect, stopPolling]);
 
   // Filter to only show OCR completed documents
   useEffect(() => {
@@ -220,8 +271,8 @@ export default function HighlightModule({
 
       await highlightApi.trigger(file.id);
 
-      // Start polling with the hook
-      startPolling();
+      // Start SSE or polling to monitor progress
+      startMonitoring();
     } catch (error) {
       console.error('Highlight failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
@@ -249,8 +300,8 @@ export default function HighlightModule({
       await highlightApi.triggerBatch(projectId);
       onSuccess('高光分析已启动');
 
-      // Start polling with the hook
-      startPolling();
+      // Start SSE or polling to monitor progress
+      startMonitoring();
     } catch (error) {
       console.error('Batch highlight failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
