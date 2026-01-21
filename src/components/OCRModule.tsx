@@ -1,9 +1,13 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { ocrApi } from '@/utils/api';
+import { useState, useEffect, useCallback } from 'react';
+import { ocrApi, type OCRProgressResponse } from '@/utils/api';
+import { useSSE } from '@/hooks/useSSE';
 import { usePolling } from '@/hooks/usePolling';
 import type { Document } from '@/types';
+
+// SSE support detection
+const supportsSSE = typeof window !== 'undefined' && typeof EventSource !== 'undefined';
 
 // Types
 export type OCRFileStatus = 'pending' | 'queued' | 'processing' | 'completed' | 'failed';
@@ -88,48 +92,78 @@ export default function OCRModule({
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [selectedOCRText, setSelectedOCRText] = useState<string>('');
   const [listCollapsed, setListCollapsed] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
 
-  // Use polling hook for OCR progress (defined early so isProcessing is available)
+  // SSE stream URL
+  const sseUrl = projectId ? ocrApi.getStreamUrl(projectId) : null;
+
+  // Handle progress update (shared by SSE and polling)
+  const handleProgressUpdate = useCallback((progress: OCRProgressResponse) => {
+    // Update file statuses
+    setOcrFiles(prev => prev.map(file => {
+      const docProgress = progress.documents?.find(d => d.id === file.id);
+      if (docProgress) {
+        return {
+          ...file,
+          status: docProgress.ocr_status as OCRFileStatus,
+        };
+      }
+      return file;
+    }));
+  }, []);
+
+  // Handle OCR complete (shared by SSE and polling)
+  const handleOCRDone = useCallback((progress: OCRProgressResponse) => {
+    setIsProcessing(false);
+    onOCRComplete();
+    if (progress.failed > 0) {
+      onError(`OCR 完成: ${progress.completed} 成功, ${progress.failed} 失败`);
+    } else if (progress.completed > 0) {
+      onSuccess(`OCR 完成: ${progress.completed} 个文档已处理`);
+    }
+  }, [onOCRComplete, onError, onSuccess]);
+
+  // Use SSE hook for real-time progress (primary method)
   const {
-    isPolling: isProcessing,
+    isConnected: sseConnected,
+    connect: sseConnect,
+    disconnect: sseDisconnect,
+  } = useSSE<OCRProgressResponse>({
+    url: supportsSSE ? sseUrl : null,
+    onMessage: handleProgressUpdate,
+    onComplete: handleOCRDone,
+    onError: (event) => {
+      console.error('[OCR SSE] Connection error:', event);
+      // SSE will auto-reconnect, but we log for debugging
+    },
+  });
+
+  // Fallback: Use polling hook for OCR progress (for browsers without SSE)
+  const {
+    isPolling,
     errorCount: pollErrorCount,
     start: startPolling,
     stop: stopPolling,
   } = usePolling({
     fetcher: () => ocrApi.getProgress(projectId),
-    shouldContinue: (progress) => progress.processing > 0 || progress.pending > 0,
+    shouldContinue: (progress) => progress.processing > 0 || progress.pending > 0 || progress.queued > 0,
     interval: 2000,
     errorRetryInterval: 5000,
     maxErrorCount: 3,
     maxDuration: 30 * 60 * 1000, // 30 minutes
     enabled: false, // Manual start
     onSuccess: (progress) => {
-      // Update file statuses
-      setOcrFiles(prev => prev.map(file => {
-        const docProgress = progress.documents?.find(d => d.id === file.id);
-        if (docProgress) {
-          return {
-            ...file,
-            status: docProgress.ocr_status as OCRFileStatus,
-          };
-        }
-        return file;
-      }));
-
-      // Check if polling is complete (no more processing/pending)
-      if (progress.processing === 0 && progress.pending === 0) {
-        onOCRComplete();
-        if (progress.failed > 0) {
-          onError(`OCR 完成: ${progress.completed} 成功, ${progress.failed} 失败`);
-        } else if (progress.completed > 0) {
-          onSuccess(`OCR 完成: ${progress.completed} 个文档已处理`);
-        }
+      handleProgressUpdate(progress);
+      // Check if polling is complete
+      if (progress.processing === 0 && progress.pending === 0 && progress.queued === 0) {
+        handleOCRDone(progress);
       }
     },
     onError: (err) => {
       console.error('Failed to get OCR progress:', err);
     },
     onMaxErrors: () => {
+      setIsProcessing(false);
       onError('无法连接后端服务，请检查后端是否运行');
       // Reset processing files to pending
       setOcrFiles(prev => prev.map(f =>
@@ -139,6 +173,7 @@ export default function OCRModule({
       ));
     },
     onTimeout: () => {
+      setIsProcessing(false);
       onError('OCR 处理超时，请检查后端状态');
       // Reset processing files to pending
       setOcrFiles(prev => prev.map(f =>
@@ -148,6 +183,27 @@ export default function OCRModule({
       ));
     },
   });
+
+  // Start monitoring OCR progress (SSE or polling)
+  const startMonitoring = useCallback(() => {
+    setIsProcessing(true);
+    if (supportsSSE) {
+      sseConnect();
+    } else {
+      // Fallback to polling
+      startPolling();
+    }
+  }, [sseConnect, startPolling]);
+
+  // Stop monitoring OCR progress
+  const stopMonitoring = useCallback(() => {
+    setIsProcessing(false);
+    if (supportsSSE) {
+      sseDisconnect();
+    } else {
+      stopPolling();
+    }
+  }, [sseDisconnect, stopPolling]);
 
   // Convert documents to OCR files
   useEffect(() => {
@@ -192,8 +248,8 @@ export default function OCRModule({
 
       await ocrApi.triggerSingle(documentId);
 
-      // Start polling with the hook
-      startPolling();
+      // Start SSE or polling to monitor progress
+      startMonitoring();
     } catch (error) {
       console.error('OCR failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
@@ -219,8 +275,8 @@ export default function OCRModule({
       await ocrApi.triggerBatch(projectId);
       onSuccess('OCR 处理已启动');
 
-      // Start polling with the hook
-      startPolling();
+      // Start SSE or polling to monitor progress
+      startMonitoring();
     } catch (error) {
       console.error('Batch OCR failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
