@@ -273,23 +273,41 @@ export const ocrApi = {
 
   // Get project OCR progress
   getProgress: (projectId: string) =>
-    fetchApi<{
-      project_id: string;
-      total: number;
-      pending: number;
-      processing: number;
-      completed: number;
-      failed: number;
-      progress_percent: number;
-      documents: Array<{
-        id: string;
-        file_name: string;
-        exhibit_number: string;
-        ocr_status: string;
-        page_count: number;
-      }>;
-    }>(`/api/ocr/progress/${projectId}`),
+    fetchApi<OCRProgressResponse>(`/api/ocr/progress/${projectId}`),
+
+  // Get SSE stream URL for OCR progress
+  getStreamUrl: (projectId: string) => `${API_BASE}/api/ocr/stream/${projectId}`,
 };
+
+// OCR Progress response type (used by both polling and SSE)
+export interface OCRProgressResponse {
+  project_id: string;
+  total: number;
+  pending: number;
+  queued: number;
+  processing: number;
+  completed: number;
+  failed: number;
+  partial: number;
+  paused: number;
+  cancelled: number;
+  progress_percent: number;
+  current_processing: {
+    document_id: string;
+    file_name: string;
+    current_page: number;
+    total_pages: number;
+    page_status: string;
+  } | null;
+  documents: Array<{
+    id: string;
+    file_name: string;
+    exhibit_number: string;
+    ocr_status: string;
+    page_count: number;
+    ocr_error: string | null;
+  }>;
+}
 
 // L-1 Analysis APIs
 export const analysisApi = {
