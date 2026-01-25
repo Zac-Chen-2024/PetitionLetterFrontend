@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { highlightApi, type DocumentHighlightInfo, type HighlightItem, type HighlightProgressResponse } from '@/utils/api';
 import { useSSE } from '@/hooks/useSSE';
 import { usePolling } from '@/hooks/usePolling';
@@ -99,21 +99,31 @@ export default function HighlightModule({
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedHighlightId, setSelectedHighlightId] = useState<string | null>(null);
 
+  // Refs for preventing duplicate operations
+  const initializedRef = useRef(false);
+  const highlightsLoadingRef = useRef(false);
+
   // SSE stream URL
   const sseUrl = projectId ? highlightApi.getStreamUrl(projectId) : null;
 
   // Handle progress update (shared by SSE and polling)
   const handleProgressUpdate = useCallback((progress: HighlightProgressResponse) => {
-    setHighlightFiles(prev => prev.map(file => {
-      const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
-      if (docInfo) {
-        return {
-          ...file,
-          status: (docInfo.highlight_status || 'pending') as HighlightFileStatus,
-        };
-      }
-      return file;
-    }));
+    setHighlightFiles(prev => {
+      let hasChange = false;
+      const updated = prev.map(file => {
+        const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
+        if (docInfo) {
+          const newStatus = (docInfo.highlight_status || 'pending') as HighlightFileStatus;
+          if (file.status !== newStatus) {
+            hasChange = true;
+            return { ...file, status: newStatus };
+          }
+        }
+        return file;
+      });
+      // 只在有实际变化时返回新数组，否则返回原数组（引用不变）
+      return hasChange ? updated : prev;
+    });
   }, []);
 
   // Handle highlight complete (shared by SSE and polling)
@@ -204,43 +214,96 @@ export default function HighlightModule({
     }
   }, [sseDisconnect, stopPolling]);
 
-  // Filter to only show OCR completed documents
+  // 使用 useMemo 计算 OCR 完成的文档 ID 列表
+  const ocrCompletedDocIds = useMemo(() => {
+    return documents
+      .filter(doc => doc.ocr_status === 'completed')
+      .map(doc => doc.id)
+      .sort()
+      .join(',');
+  }, [documents]);
+
+  // 只在文档 ID 列表变化时更新 highlightFiles
   useEffect(() => {
     const ocrCompletedDocs = documents.filter(doc => doc.ocr_status === 'completed');
-    const files: HighlightFile[] = ocrCompletedDocs.map(doc => ({
-      id: doc.id,
-      fileName: doc.file_name,
-      exhibitNumber: doc.exhibit_number || 'N/A',
-      status: 'pending' as HighlightFileStatus,
-      pageCount: doc.page_count || 1,
-    }));
-    setHighlightFiles(files);
 
-    // Auto-select first file if none selected
-    if (!selectedFile && files.length > 0) {
-      setSelectedFile(files[0]);
+    setHighlightFiles(prev => {
+      // 检查是否有实际变化
+      const prevIds = new Set(prev.map(f => f.id));
+      const newIds = new Set(ocrCompletedDocs.map(d => d.id));
+
+      // 如果 ID 集合相同，保持不变
+      if (prevIds.size === newIds.size && [...prevIds].every(id => newIds.has(id))) {
+        return prev;
+      }
+
+      // 有变化时才更新
+      return ocrCompletedDocs.map(doc => {
+        const existingFile = prev.find(f => f.id === doc.id);
+        return {
+          id: doc.id,
+          fileName: doc.file_name,
+          exhibitNumber: doc.exhibit_number || 'N/A',
+          status: existingFile?.status || 'pending' as HighlightFileStatus,
+          pageCount: doc.page_count || 1,
+        };
+      });
+    });
+  }, [ocrCompletedDocIds, documents]);
+
+  // Auto-select first file if none selected
+  useEffect(() => {
+    if (!selectedFile && highlightFiles.length > 0) {
+      setSelectedFile(highlightFiles[0]);
     }
-  }, [documents, selectedFile]);
+  }, [selectedFile, highlightFiles]);
 
-  // Load highlight status
+  // 使用 useMemo 提取当前选中文件的最新状态
+  const currentSelectedFileStatus = useMemo(() => {
+    if (!selectedFile) return null;
+    return highlightFiles.find(f => f.id === selectedFile.id)?.status ?? null;
+  }, [highlightFiles, selectedFile?.id]);
+
+  // 只在状态实际变化时同步
+  useEffect(() => {
+    if (selectedFile && currentSelectedFileStatus && currentSelectedFileStatus !== selectedFile.status) {
+      setSelectedFile(prev => prev ? { ...prev, status: currentSelectedFileStatus } : null);
+    }
+  }, [currentSelectedFileStatus, selectedFile?.status]);
+
+  // 重置初始化标志当 projectId 变化时
+  useEffect(() => {
+    initializedRef.current = false;
+  }, [projectId]);
+
+  // 初始化时从后端加载一次状态（仅在组件挂载或 projectId 变化时）
   useEffect(() => {
     const loadHighlightStatus = async () => {
-      if (highlightFiles.length === 0) return;
+      // 只在未初始化且有文件时加载
+      if (initializedRef.current || highlightFiles.length === 0) return;
+      initializedRef.current = true;
 
       try {
         const progress = await highlightApi.getProgress(projectId);
-
-        setHighlightFiles(prev => prev.map(file => {
-          const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
-          if (docInfo) {
-            return {
-              ...file,
-              status: (docInfo.highlight_status || 'pending') as HighlightFileStatus,
-              pageCount: docInfo.page_count || file.pageCount,
-            };
-          }
-          return file;
-        }));
+        setHighlightFiles(prev => {
+          let hasChange = false;
+          const updated = prev.map(file => {
+            const docInfo = progress.documents?.find((d: DocumentHighlightInfo) => d.id === file.id);
+            if (docInfo) {
+              const newStatus = (docInfo.highlight_status || 'pending') as HighlightFileStatus;
+              if (file.status !== newStatus) {
+                hasChange = true;
+                return {
+                  ...file,
+                  status: newStatus,
+                  pageCount: docInfo.page_count || file.pageCount,
+                };
+              }
+            }
+            return file;
+          });
+          return hasChange ? updated : prev;
+        });
       } catch (err) {
         console.error('Failed to load highlight status:', err);
       }
@@ -316,6 +379,9 @@ export default function HighlightModule({
     }
   };
 
+  // 提取当前选中文件的状态（稳定的原始值）
+  const selectedFileStatus = highlightFiles.find(f => f.id === selectedFile?.id)?.status;
+
   // Load highlights when selected file changes or completes
   useEffect(() => {
     const loadHighlights = async () => {
@@ -324,12 +390,15 @@ export default function HighlightModule({
         return;
       }
 
-      // Only load highlights if the file has completed highlight analysis
-      const fileStatus = highlightFiles.find(f => f.id === selectedFile.id)?.status;
-      if (fileStatus !== 'completed') {
+      // 只在文件完成高光分析时加载高光
+      if (selectedFileStatus !== 'completed') {
         setAllHighlights([]);
         return;
       }
+
+      // 防止重复加载
+      if (highlightsLoadingRef.current) return;
+      highlightsLoadingRef.current = true;
 
       setHighlightsLoading(true);
       try {
@@ -340,13 +409,14 @@ export default function HighlightModule({
         setAllHighlights([]);
       } finally {
         setHighlightsLoading(false);
+        highlightsLoadingRef.current = false;
       }
     };
 
     loadHighlights();
     setCurrentPage(1);
     setSelectedHighlightId(null);
-  }, [selectedFile?.id, highlightFiles]);
+  }, [selectedFile?.id, selectedFileStatus]);  // 只依赖 id 和 status，不依赖整个数组
 
   // Select file to view
   const handleSelectFile = (file: HighlightFile) => {
