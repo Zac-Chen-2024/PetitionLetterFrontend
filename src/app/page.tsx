@@ -450,7 +450,7 @@ export default function App() {
                 onOCRComplete={handleOCRComplete}
                 onSuccess={handleSuccess}
                 onError={handleError}
-                modelsReady={preloadStatus?.is_ready ?? false}
+                modelsReady={preloadStatus?.models?.ocr?.status === 'loaded'}
               />
 
               {/* Module 3: Highlight */}
@@ -460,7 +460,7 @@ export default function App() {
                 onHighlightComplete={handleHighlightComplete}
                 onSuccess={handleSuccess}
                 onError={handleError}
-                modelsReady={preloadStatus?.is_ready ?? false}
+                modelsReady={preloadStatus?.models?.llm?.status === 'loaded'}
               />
 
               {/* Module 4: L-1 Analysis */}
