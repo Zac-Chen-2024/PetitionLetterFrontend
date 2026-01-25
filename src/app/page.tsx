@@ -236,7 +236,9 @@ export default function App() {
   };
 
   const handleHighlightComplete = () => {
-    loadDocuments();
+    // 高光分析完成后不需要重新加载文档
+    // 因为高光分析不会改变文档的基本信息（file_name, ocr_status 等）
+    // 高光状态由 HighlightModule 内部管理
   };
 
   const handleSuccess = (message: string) => {
