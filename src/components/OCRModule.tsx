@@ -94,11 +94,31 @@ export default function OCRModule({
   const [listCollapsed, setListCollapsed] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
+  // Page-level progress for currently processing document
+  const [currentProcessing, setCurrentProcessing] = useState<{
+    documentId: string;
+    fileName: string;
+    currentPage: number;
+    totalPages: number;
+  } | null>(null);
+
   // SSE stream URL
   const sseUrl = projectId ? ocrApi.getStreamUrl(projectId) : null;
 
   // Handle progress update (shared by SSE and polling)
   const handleProgressUpdate = useCallback((progress: OCRProgressResponse) => {
+    // Update page-level progress for current document
+    if (progress.current_processing) {
+      setCurrentProcessing({
+        documentId: progress.current_processing.document_id,
+        fileName: progress.current_processing.file_name,
+        currentPage: progress.current_processing.current_page,
+        totalPages: progress.current_processing.total_pages,
+      });
+    } else {
+      setCurrentProcessing(null);
+    }
+
     // Update file statuses
     setOcrFiles(prev => prev.map(file => {
       const docProgress = progress.documents?.find(d => d.id === file.id);
@@ -115,6 +135,7 @@ export default function OCRModule({
   // Handle OCR complete (shared by SSE and polling)
   const handleOCRDone = useCallback((progress: OCRProgressResponse) => {
     setIsProcessing(false);
+    setCurrentProcessing(null);  // Clear page progress
     onOCRComplete();
     if (progress.failed > 0) {
       onError(`OCR 完成: ${progress.completed} 成功, ${progress.failed} 失败`);
@@ -378,31 +399,49 @@ export default function OCRModule({
                     <div
                       key={file.id}
                       onClick={() => file.status === 'completed' && handleSelectFile(file)}
-                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors ${
+                      className={`px-3 py-2 cursor-pointer transition-colors ${
                         selectedFileId === file.id
                           ? 'bg-purple-50 border-r-2 border-purple-500'
                           : 'hover:bg-gray-50'
                       } ${file.status !== 'completed' ? 'opacity-60' : ''}`}
                     >
-                      <StatusIcon status={file.status} />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-xs font-medium text-gray-700 truncate">
-                          {file.exhibitNumber}
-                        </p>
-                        <p className="text-xs text-gray-500 truncate" title={file.fileName}>
-                          {file.fileName}
-                        </p>
+                      <div className="flex items-center gap-2">
+                        <StatusIcon status={file.status} />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs font-medium text-gray-700 truncate">
+                            {file.exhibitNumber}
+                          </p>
+                          <p className="text-xs text-gray-500 truncate" title={file.fileName}>
+                            {file.fileName}
+                          </p>
+                        </div>
+                        {file.status === 'pending' && !isProcessing && modelsReady && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStartSingle(file.id);
+                            }}
+                            className="px-1.5 py-0.5 text-xs text-purple-600 hover:bg-purple-100 rounded transition-colors"
+                          >
+                            开始
+                          </button>
+                        )}
                       </div>
-                      {file.status === 'pending' && !isProcessing && modelsReady && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStartSingle(file.id);
-                          }}
-                          className="px-1.5 py-0.5 text-xs text-purple-600 hover:bg-purple-100 rounded transition-colors"
-                        >
-                          开始
-                        </button>
+
+                      {/* Page-level progress bar for currently processing file */}
+                      {currentProcessing?.documentId === file.id && currentProcessing.totalPages > 0 && (
+                        <div className="mt-2">
+                          <div className="flex justify-between text-xs text-gray-500 mb-1">
+                            <span>第 {currentProcessing.currentPage}/{currentProcessing.totalPages} 页</span>
+                            <span>{Math.round((currentProcessing.currentPage / currentProcessing.totalPages) * 100)}%</span>
+                          </div>
+                          <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-purple-500 transition-all duration-300"
+                              style={{ width: `${(currentProcessing.currentPage / currentProcessing.totalPages) * 100}%` }}
+                            />
+                          </div>
+                        </div>
                       )}
                     </div>
                   ))}
