@@ -9,6 +9,7 @@ import OCRModule from '@/components/OCRModule';
 import HighlightModule from '@/components/HighlightModule';
 import L1AnalysisModule from '@/components/L1AnalysisModule';
 import RelationshipModule from '@/components/RelationshipModule';
+import WritingModule from '@/components/WritingModule';
 
 // ============================================================================
 // VERSION INFO
@@ -479,13 +480,13 @@ export default function App() {
                 onError={handleError}
               />
 
-              {/* Future Modules Placeholder */}
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center">
-                <p className="text-sm text-gray-500">后续模块</p>
-                <p className="text-xs text-gray-400 mt-1">
-                  Petition Letter 写作
-                </p>
-              </div>
+              {/* Module 6: Writing */}
+              <WritingModule
+                projectId={currentProject.id}
+                onSuccess={handleSuccess}
+                onError={handleError}
+                modelsReady={preloadStatus?.models?.llm?.status === 'loaded'}
+              />
             </div>
           )}
         </div>
