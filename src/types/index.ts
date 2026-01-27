@@ -114,3 +114,47 @@ export interface ApiResponse<T> {
   data?: T;
   error?: string;
 }
+
+// Writing Module types
+export interface EnhancedCitation {
+  exhibit: string;              // "A-6"
+  file_name: string;
+  quote: string;
+  claim: string;
+  document_id: string;          // For loading PDF
+  page_number: number;
+  bbox?: {                      // Preview area
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
+  };
+}
+
+export interface DialogMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  selection?: {                 // If editing selection
+    text: string;
+    start: number;
+    end: number;
+  };
+  timestamp: string;
+}
+
+export interface WritingState {
+  section: L1StandardKey;       // Current section
+  content: string;              // Current paragraph content
+  citations: EnhancedCitation[];
+  dialogHistory: DialogMessage[];
+}
+
+export interface TextSelection {
+  text: string;
+  start: number;
+  end: number;
+}
+
+export type DialogLayoutMode = 'bottom' | 'right';
+export type SelectionEditMode = 'bubble' | 'panel';

@@ -401,6 +401,13 @@ interface WritingResult {
   citations: Citation[];
 }
 
+// Revise request type
+interface ReviseSelection {
+  text: string;
+  start: number;
+  end: number;
+}
+
 // Writing APIs
 export const writingApi = {
   // Generate paragraph for a section
@@ -452,6 +459,65 @@ export const writingApi = {
       sections: Record<string, WritingResult>;
       count: number;
     }>(`/api/l1-writing/${projectId}`),
+
+  // Revise paragraph with natural language instruction
+  revise: (
+    projectId: string,
+    sectionType: string,
+    currentContent: string,
+    instruction: string,
+    selection?: ReviseSelection
+  ) =>
+    fetchApi<{
+      success: boolean;
+      revised_content: string;
+      changes_made: string;
+    }>(`/api/l1-revise/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        section_type: sectionType,
+        current_content: currentContent,
+        instruction,
+        selection: selection || null,
+      }),
+    }),
+};
+
+// PDF Preview APIs
+export const pdfApi = {
+  // Get PDF page preview image
+  getPreview: (documentId: string, page: number, bbox?: { x1: number; y1: number; x2: number; y2: number }) => {
+    const params = bbox ? `?bbox=${encodeURIComponent(JSON.stringify(bbox))}` : '';
+    return fetchApi<{
+      image: string; // base64 data URL
+      document_id: string;
+      page: number;
+    }>(`/api/pdf-preview/${documentId}/${page}${params}`);
+  },
+
+  // Get preview image URL (for img src)
+  getPreviewUrl: (documentId: string, page: number, dpi?: number) => {
+    const params = dpi ? `?dpi=${dpi}` : '';
+    return `${API_BASE}/api/pdf-preview/${documentId}/${page}/image${params}`;
+  },
+};
+
+// Citation Index APIs
+export const citationApi = {
+  // Get citation index for a project
+  getIndex: (projectId: string) =>
+    fetchApi<{
+      project_id: string;
+      citations: Record<string, {
+        document_id: string;
+        file_name: string;
+        quotes: Array<{
+          text: string;
+          page: number;
+          bbox?: { x1: number; y1: number; x2: number; y2: number };
+        }>;
+      }>;
+    }>(`/api/citation-index/${projectId}`),
 };
 
 // Model APIs
