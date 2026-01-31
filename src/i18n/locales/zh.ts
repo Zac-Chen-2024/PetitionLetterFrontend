@@ -212,6 +212,27 @@ export const zh: Translations = {
       completed: '已完成',
       error: '分析失败',
     },
+    viewMode: {
+      list: '列表视图',
+      graph: '图形视图',
+    },
+    graph: {
+      type: '类型',
+      sourceDocuments: '来源文档',
+      evidence: '证据',
+      noDescription: '无描述',
+    },
+    graphTabs: {
+      all: '总览',
+      qualifying_relationship: '公司关系',
+      qualifying_employment: '海外任职',
+      qualifying_capacity: '职位级别',
+      doing_business: '商业运营',
+    },
+    graphLayers: {
+      others: '其他',
+    },
+    relationDetails: '关系详情',
   },
 
   // Writing module

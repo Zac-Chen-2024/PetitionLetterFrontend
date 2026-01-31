@@ -214,6 +214,27 @@ export interface Translations {
       completed: string;
       error: string;
     };
+    viewMode: {
+      list: string;
+      graph: string;
+    };
+    graph: {
+      type: string;
+      sourceDocuments: string;
+      evidence: string;
+      noDescription: string;
+    };
+    graphTabs: {
+      all: string;
+      qualifying_relationship: string;
+      qualifying_employment: string;
+      qualifying_capacity: string;
+      doing_business: string;
+    };
+    graphLayers: {
+      others: string;
+    };
+    relationDetails: string;
   };
 
   // Writing module

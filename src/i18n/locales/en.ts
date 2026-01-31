@@ -212,6 +212,27 @@ export const en: Translations = {
       completed: 'Completed',
       error: 'Analysis failed',
     },
+    viewMode: {
+      list: 'List View',
+      graph: 'Graph View',
+    },
+    graph: {
+      type: 'Type',
+      sourceDocuments: 'Source Documents',
+      evidence: 'Evidence',
+      noDescription: 'No description',
+    },
+    graphTabs: {
+      all: 'Overview',
+      qualifying_relationship: 'Corporate',
+      qualifying_employment: 'Employment',
+      qualifying_capacity: 'Capacity',
+      doing_business: 'Operations',
+    },
+    graphLayers: {
+      others: 'Other',
+    },
+    relationDetails: 'Relation Details',
   },
 
   // Writing module

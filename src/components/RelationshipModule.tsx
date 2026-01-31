@@ -1,12 +1,24 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import dynamic from 'next/dynamic';
 import { relationshipApi, RelationshipProgressResponse } from '@/utils/api';
 import { useSSE } from '@/hooks/useSSE';
 import { useLanguage } from '@/i18n/LanguageContext';
 
+// Dynamically import RelationshipGraph to avoid SSR issues
+const RelationshipGraph = dynamic(() => import('./RelationshipGraph'), {
+  ssr: false,
+  loading: () => (
+    <div className="h-[400px] flex items-center justify-center">
+      <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
+    </div>
+  ),
+});
+
 // Types
 type ModuleStatus = 'idle' | 'processing' | 'completed' | 'error';
+type ViewMode = 'list' | 'graph';
 
 interface Entity {
   id: string;
@@ -31,7 +43,7 @@ interface EvidenceChain {
   reasoning: string;
 }
 
-interface RelationshipGraph {
+interface RelationshipGraphData {
   entities: Entity[];
   relations: Relation[];
   evidence_chains: EvidenceChain[];
@@ -66,6 +78,18 @@ const ChevronDownIcon = () => (
 const ChevronUpIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
+  </svg>
+);
+
+const ListIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+  </svg>
+);
+
+const GraphIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
   </svg>
 );
 
@@ -297,8 +321,9 @@ export default function RelationshipModule({
 }: RelationshipModuleProps) {
   const { t } = useLanguage();
   const [status, setStatus] = useState<ModuleStatus>('idle');
-  const [graph, setGraph] = useState<RelationshipGraph | null>(null);
+  const [graph, setGraph] = useState<RelationshipGraphData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('graph');
 
   // SSE URL for progress monitoring
   const sseUrl = projectId ? relationshipApi.getStreamUrl(projectId) : null;
@@ -428,6 +453,35 @@ export default function RelationshipModule({
             )}
           </div>
           <div className="flex items-center gap-2">
+            {/* View mode toggle - only show when data exists */}
+            {status === 'completed' && (entityCount > 0 || relationCount > 0) && (
+              <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                    viewMode === 'list'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title={t.relationship.viewMode.list}
+                >
+                  <ListIcon />
+                  <span className="hidden sm:inline">{t.relationship.viewMode.list}</span>
+                </button>
+                <button
+                  onClick={() => setViewMode('graph')}
+                  className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                    viewMode === 'graph'
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                  title={t.relationship.viewMode.graph}
+                >
+                  <GraphIcon />
+                  <span className="hidden sm:inline">{t.relationship.viewMode.graph}</span>
+                </button>
+              </div>
+            )}
             <button
               onClick={handleStartAnalysis}
               disabled={!projectId || status === 'processing'}
@@ -495,49 +549,59 @@ export default function RelationshipModule({
               </div>
             </div>
 
-            {/* Entities section */}
-            {entityCount > 0 && (
-              <Section title={t.relationship.entityList} count={entityCount} defaultExpanded={true}>
-                {Object.entries(entitiesByType).map(([type, entities]) => (
-                  <div key={type} className="space-y-2">
-                    <p className="text-xs font-medium text-gray-500 uppercase">
-                      {getEntityTypeLabel(type, t)} ({entities.length})
-                    </p>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                      {entities.map((entity) => (
-                        <EntityCard key={entity.id} entity={entity} t={t} />
+            {/* Graph view */}
+            {viewMode === 'graph' ? (
+              <RelationshipGraph
+                entities={graph.entities}
+                relations={graph.relations}
+              />
+            ) : (
+              <>
+                {/* Entities section */}
+                {entityCount > 0 && (
+                  <Section title={t.relationship.entityList} count={entityCount} defaultExpanded={true}>
+                    {Object.entries(entitiesByType).map(([type, entities]) => (
+                      <div key={type} className="space-y-2">
+                        <p className="text-xs font-medium text-gray-500 uppercase">
+                          {getEntityTypeLabel(type, t)} ({entities.length})
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                          {entities.map((entity) => (
+                            <EntityCard key={entity.id} entity={entity} t={t} />
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </Section>
+                )}
+
+                {/* Relations section */}
+                {relationCount > 0 && (
+                  <Section title={t.relationship.relationList} count={relationCount}>
+                    <div className="space-y-2">
+                      {graph.relations.map((relation, idx) => (
+                        <RelationCard
+                          key={idx}
+                          relation={relation}
+                          entities={graph.entities}
+                          t={t}
+                        />
                       ))}
                     </div>
-                  </div>
-                ))}
-              </Section>
-            )}
+                  </Section>
+                )}
 
-            {/* Relations section */}
-            {relationCount > 0 && (
-              <Section title={t.relationship.relationList} count={relationCount}>
-                <div className="space-y-2">
-                  {graph.relations.map((relation, idx) => (
-                    <RelationCard
-                      key={idx}
-                      relation={relation}
-                      entities={graph.entities}
-                      t={t}
-                    />
-                  ))}
-                </div>
-              </Section>
-            )}
-
-            {/* Evidence chains section */}
-            {evidenceCount > 0 && (
-              <Section title={t.relationship.evidenceChains} count={evidenceCount}>
-                <div className="space-y-2">
-                  {graph.evidence_chains.map((chain, idx) => (
-                    <EvidenceChainCard key={idx} chain={chain} t={t} />
-                  ))}
-                </div>
-              </Section>
+                {/* Evidence chains section */}
+                {evidenceCount > 0 && (
+                  <Section title={t.relationship.evidenceChains} count={evidenceCount}>
+                    <div className="space-y-2">
+                      {graph.evidence_chains.map((chain, idx) => (
+                        <EvidenceChainCard key={idx} chain={chain} t={t} />
+                      ))}
+                    </div>
+                  </Section>
+                )}
+              </>
             )}
           </div>
         ) : (

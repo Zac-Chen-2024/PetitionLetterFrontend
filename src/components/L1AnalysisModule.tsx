@@ -156,7 +156,7 @@ export default function L1AnalysisModule({
   const [summary, setSummary] = useState<L1Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<L1ProgressResponse | null>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(true);
 
   // SSE URL for progress monitoring
   const sseUrl = projectId ? analysisApi.getStreamUrl(projectId) : null;
@@ -418,12 +418,12 @@ export default function L1AnalysisModule({
 
             {/* Standard sections */}
             <div className="space-y-3">
-              {(Object.keys(L1_STANDARDS) as L1StandardKey[]).map((key, idx) => (
+              {(Object.keys(L1_STANDARDS) as L1StandardKey[]).map((key) => (
                 <StandardSection
                   key={key}
                   standardKey={key}
                   quotes={getQuotesByStandard(key)}
-                  defaultExpanded={idx === 0}
+                  defaultExpanded={false}
                   t={t}
                 />
               ))}
