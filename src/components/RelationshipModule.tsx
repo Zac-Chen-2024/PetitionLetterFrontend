@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { relationshipApi, RelationshipProgressResponse } from '@/utils/api';
 import { useSSE } from '@/hooks/useSSE';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 // Types
 type ModuleStatus = 'idle' | 'processing' | 'completed' | 'error';
@@ -68,38 +69,44 @@ const ChevronUpIcon = () => (
   </svg>
 );
 
-// Entity type to Chinese label mapping
-const ENTITY_TYPE_LABELS: Record<string, string> = {
-  person: '人物',
-  organization: '组织',
-  company: '公司',
-  date: '日期',
-  location: '地点',
-  position: '职位',
-  event: '事件',
-  document: '文档',
+// Helper to get entity type label
+const getEntityTypeLabel = (type: string, t: ReturnType<typeof useLanguage>['t']): string => {
+  const labels: Record<string, string> = {
+    person: t.relationship.entityTypes.person,
+    organization: t.relationship.entityTypes.organization,
+    company: t.relationship.entityTypes.company,
+    date: t.relationship.entityTypes.date,
+    location: t.relationship.entityTypes.location,
+    position: t.relationship.entityTypes.position,
+    event: t.relationship.entityTypes.event,
+    document: t.relationship.entityTypes.document,
+  };
+  return labels[type] || type;
 };
 
-// Relation type to Chinese label mapping
-const RELATION_TYPE_LABELS: Record<string, string> = {
-  works_for: '任职于',
-  owns: '拥有',
-  subsidiary_of: '子公司',
-  affiliated_with: '关联',
-  employed_by: '受雇于',
-  manages: '管理',
-  reports_to: '汇报给',
-  founded: '创立',
-  located_in: '位于',
+// Helper to get relation type label
+const getRelationTypeLabel = (type: string, t: ReturnType<typeof useLanguage>['t']): string => {
+  const labels: Record<string, string> = {
+    works_for: t.relationship.relationTypes.works_for,
+    owns: t.relationship.relationTypes.owns,
+    subsidiary_of: t.relationship.relationTypes.subsidiary_of,
+    affiliated_with: t.relationship.relationTypes.affiliated_with,
+    employed_by: t.relationship.relationTypes.employed_by,
+    manages: t.relationship.relationTypes.manages,
+    reports_to: t.relationship.relationTypes.reports_to,
+    founded: t.relationship.relationTypes.founded,
+    located_in: t.relationship.relationTypes.located_in,
+  };
+  return labels[type] || type;
 };
 
 // Status badge component
-const StatusBadge = ({ status }: { status: ModuleStatus }) => {
+const StatusBadge = ({ status, t }: { status: ModuleStatus; t: ReturnType<typeof useLanguage>['t'] }) => {
   const config = {
-    idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: '等待分析' },
-    processing: { bg: 'bg-rose-100', text: 'text-rose-700', label: '分析中' },
-    completed: { bg: 'bg-green-100', text: 'text-green-700', label: '已完成' },
-    error: { bg: 'bg-red-100', text: 'text-red-700', label: '分析失败' },
+    idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: t.relationship.status.idle },
+    processing: { bg: 'bg-rose-100', text: 'text-rose-700', label: t.relationship.status.processing },
+    completed: { bg: 'bg-green-100', text: 'text-green-700', label: t.relationship.status.completed },
+    error: { bg: 'bg-red-100', text: 'text-red-700', label: t.relationship.status.error },
   };
   const { bg, text, label } = config[status];
   return (
@@ -125,8 +132,8 @@ const getEntityTypeColor = (type: string): string => {
 };
 
 // Entity card component
-const EntityCard = ({ entity }: { entity: Entity }) => {
-  const typeLabel = ENTITY_TYPE_LABELS[entity.type] || entity.type;
+const EntityCard = ({ entity, t }: { entity: Entity; t: ReturnType<typeof useLanguage>['t'] }) => {
+  const typeLabel = getEntityTypeLabel(entity.type, t);
   const typeColor = getEntityTypeColor(entity.type);
 
   return (
@@ -139,7 +146,7 @@ const EntityCard = ({ entity }: { entity: Entity }) => {
           <p className="text-sm font-medium text-gray-900 truncate">{entity.name}</p>
           {entity.documents.length > 0 && (
             <p className="text-xs text-gray-500 mt-1">
-              来源: {entity.documents.slice(0, 3).join(', ')}
+              {t.relationship.source}: {entity.documents.slice(0, 3).join(', ')}
               {entity.documents.length > 3 && ` +${entity.documents.length - 3}`}
             </p>
           )}
@@ -153,13 +160,15 @@ const EntityCard = ({ entity }: { entity: Entity }) => {
 const RelationCard = ({
   relation,
   entities,
+  t,
 }: {
   relation: Relation;
   entities: Entity[];
+  t: ReturnType<typeof useLanguage>['t'];
 }) => {
   const sourceEntity = entities.find((e) => e.id === relation.source_id);
   const targetEntity = entities.find((e) => e.id === relation.target_id);
-  const relationLabel = RELATION_TYPE_LABELS[relation.relation_type] || relation.relation_type;
+  const relationLabel = getRelationTypeLabel(relation.relation_type, t);
 
   return (
     <div className="border border-gray-200 rounded-lg p-3 hover:border-rose-200 transition-colors">
@@ -192,7 +201,7 @@ const RelationCard = ({
 };
 
 // Evidence chain card component
-const EvidenceChainCard = ({ chain }: { chain: EvidenceChain }) => {
+const EvidenceChainCard = ({ chain, t }: { chain: EvidenceChain; t: ReturnType<typeof useLanguage>['t'] }) => {
   const [expanded, setExpanded] = useState(false);
 
   const strengthColors: Record<string, string> = {
@@ -200,17 +209,21 @@ const EvidenceChainCard = ({ chain }: { chain: EvidenceChain }) => {
     medium: 'bg-yellow-100 text-yellow-700',
     weak: 'bg-red-100 text-red-700',
   };
-  const strengthLabel: Record<string, string> = {
-    strong: '强',
-    medium: '中',
-    weak: '弱',
+
+  const getStrengthLabel = (strength: string): string => {
+    const labels: Record<string, string> = {
+      strong: t.relationship.strength.strong,
+      medium: t.relationship.strength.medium,
+      weak: t.relationship.strength.weak,
+    };
+    return labels[strength] || strength;
   };
 
   return (
     <div className="border border-gray-200 rounded-lg p-3 hover:border-rose-200 transition-colors">
       <div className="flex items-start gap-2">
         <span className={`px-2 py-0.5 text-xs font-medium rounded flex-shrink-0 ${strengthColors[chain.strength] || 'bg-gray-100 text-gray-700'}`}>
-          {strengthLabel[chain.strength] || chain.strength}
+          {getStrengthLabel(chain.strength)}
         </span>
         <div className="flex-1 min-w-0">
           <p className={`text-sm text-gray-700 ${expanded ? '' : 'line-clamp-2'}`}>
@@ -221,17 +234,17 @@ const EvidenceChainCard = ({ chain }: { chain: EvidenceChain }) => {
               onClick={() => setExpanded(!expanded)}
               className="text-xs text-rose-600 hover:text-rose-800 mt-1"
             >
-              {expanded ? '收起' : '展开'}
+              {expanded ? t.common.collapse : t.common.expand}
             </button>
           )}
           {chain.documents.length > 0 && (
             <p className="text-xs text-gray-500 mt-2">
-              证据来源: {chain.documents.join(', ')}
+              {t.relationship.evidenceSource}: {chain.documents.join(', ')}
             </p>
           )}
           {chain.reasoning && expanded && (
             <p className="text-xs text-gray-500 mt-1 italic">
-              推理: {chain.reasoning}
+              {t.relationship.reasoning}: {chain.reasoning}
             </p>
           )}
         </div>
@@ -282,6 +295,7 @@ export default function RelationshipModule({
   onSuccess,
   onError,
 }: RelationshipModuleProps) {
+  const { t } = useLanguage();
   const [status, setStatus] = useState<ModuleStatus>('idle');
   const [graph, setGraph] = useState<RelationshipGraph | null>(null);
   const [loading, setLoading] = useState(false);
@@ -300,12 +314,12 @@ export default function RelationshipModule({
     if (data.status === 'completed' && data.result) {
       setGraph(data.result);
       setStatus('completed');
-      onSuccess?.(`关系分析完成: 识别了 ${data.result.entities?.length || 0} 个实体，${data.result.relations?.length || 0} 条关系`);
+      onSuccess?.(`${t.relationship.status.completed}: ${data.result.entities?.length || 0} ${t.relationship.entities}, ${data.result.relations?.length || 0} ${t.relationship.relations}`);
     } else if (data.status === 'failed') {
       setStatus('error');
-      onError?.(data.error || '关系分析失败');
+      onError?.(data.error || t.relationship.analysisFailed);
     }
-  }, [onSuccess, onError]);
+  }, [onSuccess, onError, t]);
 
   const handleSSEError = useCallback(() => {
     // SSE connection error - might reconnect automatically
@@ -377,8 +391,8 @@ export default function RelationshipModule({
     } catch (err) {
       console.error('Relationship analysis failed:', err);
       const errorMsg = err instanceof Error && err.message.includes('fetch')
-        ? '无法连接后端服务'
-        : '关系分析启动失败';
+        ? t.backend.cannotConnect
+        : t.relationship.analysisFailed;
       onError?.(errorMsg);
       setStatus('error');
     }
@@ -406,10 +420,10 @@ export default function RelationshipModule({
             <div className="w-8 h-8 bg-rose-100 rounded-lg flex items-center justify-center text-rose-600">
               <RelationshipIcon />
             </div>
-            <h3 className="text-base font-semibold text-gray-900">关系分析</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t.relationship.title}</h3>
             {(entityCount > 0 || relationCount > 0) && (
               <span className="text-xs text-gray-500">
-                {entityCount} 实体 | {relationCount} 关系
+                {entityCount} {t.relationship.entities} | {relationCount} {t.relationship.relations}
               </span>
             )}
           </div>
@@ -422,16 +436,16 @@ export default function RelationshipModule({
               {status === 'processing' ? (
                 <>
                   <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  分析中...
+                  {t.relationship.analyzing}
                 </>
               ) : (
                 <>
                   <PlayIcon />
-                  {status === 'completed' ? '重新分析' : '开始分析'}
+                  {status === 'completed' ? t.relationship.reanalyze : t.relationship.startAnalysis}
                 </>
               )}
             </button>
-            <StatusBadge status={status} />
+            <StatusBadge status={status} t={t} />
           </div>
         </div>
       </div>
@@ -441,27 +455,27 @@ export default function RelationshipModule({
         {!projectId ? (
           <div className="text-center py-8 text-gray-400">
             <RelationshipIcon />
-            <p className="mt-2 text-sm">请先选择一个项目</p>
+            <p className="mt-2 text-sm">{t.relationship.selectProject}</p>
           </div>
         ) : loading ? (
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 border-2 border-rose-500 border-t-transparent rounded-full animate-spin" />
-            <span className="ml-2 text-sm text-gray-500">加载中...</span>
+            <span className="ml-2 text-sm text-gray-500">{t.common.loading}</span>
           </div>
         ) : status === 'idle' ? (
           <div className="text-center py-8 text-gray-400">
             <svg className="w-12 h-12 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
             </svg>
-            <p className="mt-3 text-sm">点击"开始分析"提取实体关系</p>
-            <p className="mt-1 text-xs">将分析文档中的人物、组织、时间等实体及其关系</p>
+            <p className="mt-3 text-sm">{t.relationship.clickToStart}</p>
+            <p className="mt-1 text-xs">{t.relationship.analyzeEntities}</p>
           </div>
         ) : status === 'error' ? (
           <div className="text-center py-8 text-red-400">
             <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
-            <p className="mt-3 text-sm">分析失败，请重试</p>
+            <p className="mt-3 text-sm">{t.relationship.retryMessage}</p>
           </div>
         ) : graph && (entityCount > 0 || relationCount > 0) ? (
           <div className="space-y-3">
@@ -469,29 +483,29 @@ export default function RelationshipModule({
             <div className="grid grid-cols-3 gap-3 mb-4">
               <div className="bg-gray-50 rounded-lg p-3 text-center">
                 <p className="text-2xl font-bold text-rose-600">{entityCount}</p>
-                <p className="text-xs text-gray-500">实体</p>
+                <p className="text-xs text-gray-500">{t.relationship.entities}</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 text-center">
                 <p className="text-2xl font-bold text-rose-600">{relationCount}</p>
-                <p className="text-xs text-gray-500">关系</p>
+                <p className="text-xs text-gray-500">{t.relationship.relations}</p>
               </div>
               <div className="bg-gray-50 rounded-lg p-3 text-center">
                 <p className="text-2xl font-bold text-rose-600">{evidenceCount}</p>
-                <p className="text-xs text-gray-500">证据链</p>
+                <p className="text-xs text-gray-500">{t.relationship.evidenceChains}</p>
               </div>
             </div>
 
             {/* Entities section */}
             {entityCount > 0 && (
-              <Section title="实体列表" count={entityCount} defaultExpanded={true}>
+              <Section title={t.relationship.entityList} count={entityCount} defaultExpanded={true}>
                 {Object.entries(entitiesByType).map(([type, entities]) => (
                   <div key={type} className="space-y-2">
                     <p className="text-xs font-medium text-gray-500 uppercase">
-                      {ENTITY_TYPE_LABELS[type] || type} ({entities.length})
+                      {getEntityTypeLabel(type, t)} ({entities.length})
                     </p>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                       {entities.map((entity) => (
-                        <EntityCard key={entity.id} entity={entity} />
+                        <EntityCard key={entity.id} entity={entity} t={t} />
                       ))}
                     </div>
                   </div>
@@ -501,13 +515,14 @@ export default function RelationshipModule({
 
             {/* Relations section */}
             {relationCount > 0 && (
-              <Section title="关系列表" count={relationCount}>
+              <Section title={t.relationship.relationList} count={relationCount}>
                 <div className="space-y-2">
                   {graph.relations.map((relation, idx) => (
                     <RelationCard
                       key={idx}
                       relation={relation}
                       entities={graph.entities}
+                      t={t}
                     />
                   ))}
                 </div>
@@ -516,10 +531,10 @@ export default function RelationshipModule({
 
             {/* Evidence chains section */}
             {evidenceCount > 0 && (
-              <Section title="证据链" count={evidenceCount}>
+              <Section title={t.relationship.evidenceChains} count={evidenceCount}>
                 <div className="space-y-2">
                   {graph.evidence_chains.map((chain, idx) => (
-                    <EvidenceChainCard key={idx} chain={chain} />
+                    <EvidenceChainCard key={idx} chain={chain} t={t} />
                   ))}
                 </div>
               </Section>
@@ -527,7 +542,7 @@ export default function RelationshipModule({
           </div>
         ) : (
           <div className="text-center py-8 text-gray-400">
-            <p className="text-sm">分析完成，但未识别到实体或关系</p>
+            <p className="text-sm">{t.relationship.noEntitiesOrRelations}</p>
           </div>
         )}
       </div>

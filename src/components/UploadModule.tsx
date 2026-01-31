@@ -3,6 +3,7 @@
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { uploadFileChunked } from '@/utils/api';
 import type { Document } from '@/types';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 // Types
 export interface UploadingFile {
@@ -84,6 +85,7 @@ export default function UploadModule({
   onError,
   onSuccess,
 }: UploadModuleProps) {
+  const { t } = useLanguage();
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState('A');
@@ -264,11 +266,11 @@ export default function UploadModule({
     setIsUploading(false);
 
     if (successCount > 0) {
-      onSuccess(`${successCount} 个文件上传成功`);
+      onSuccess(`${successCount} ${t.upload.success}`);
       onUploadComplete();
     }
     if (errorCount > 0) {
-      onError(`${errorCount} 个文件上传失败`);
+      onError(`${errorCount} ${t.upload.failed}`);
     }
     // Keep completed files in list - don't auto-clear
   };
@@ -281,9 +283,9 @@ export default function UploadModule({
   // Status badge component
   const StatusBadge = ({ status }: { status: ModuleStatus }) => {
     const config = {
-      idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: '等待上传' },
-      uploading: { bg: 'bg-blue-100', text: 'text-blue-700', label: '上传中' },
-      completed: { bg: 'bg-green-100', text: 'text-green-700', label: '已完成' },
+      idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: t.upload.status.idle },
+      uploading: { bg: 'bg-blue-100', text: 'text-blue-700', label: t.upload.status.uploading },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: t.upload.status.completed },
     };
     const { bg, text, label } = config[status];
     return (
@@ -306,10 +308,10 @@ export default function UploadModule({
             <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center text-blue-600">
               <UploadIcon />
             </div>
-            <h3 className="text-base font-semibold text-gray-900">上传模块</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t.upload.title}</h3>
             {totalCount > 0 && (
               <span className="text-xs text-gray-500">
-                {totalCount} 个文件
+                {totalCount} {t.upload.files}
               </span>
             )}
           </div>
@@ -321,7 +323,7 @@ export default function UploadModule({
                 className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               >
                 <UploadIcon />
-                上传 ({pendingCount})
+                {t.upload.uploadButton} ({pendingCount})
               </button>
             )}
             <StatusBadge status={moduleStatus} />
@@ -372,7 +374,7 @@ export default function UploadModule({
                 onClick={clearFolder}
                 className="text-xs text-gray-400 hover:text-red-500 transition-colors"
               >
-                清除
+                {t.common.clear}
               </button>
             )}
           </div>
@@ -381,8 +383,8 @@ export default function UploadModule({
           <div className="flex-1 overflow-y-auto">
             {currentFolderFiles.length === 0 ? (
               <div className="p-4 text-center text-xs text-gray-400">
-                暂无文件
-                <p className="mt-1">拖拽或点击右侧区域上传</p>
+                {t.upload.noFiles}
+                <p className="mt-1">{t.upload.dragOrClick}</p>
               </div>
             ) : (
               <div className="py-1">
@@ -482,13 +484,13 @@ export default function UploadModule({
               <CloudUploadIcon />
             </div>
             <p className="text-sm font-medium text-gray-700">
-              拖拽文件到这里，或点击上传
+              {t.upload.dragHere}
             </p>
             <p className="text-xs text-gray-500 mt-1">
-              支持 PDF、JPG、PNG
+              {t.upload.supportedFormats}
             </p>
             <p className="text-xs text-blue-600 mt-3 font-medium">
-              当前目标: Exhibit {selectedFolder}
+              {t.upload.currentTarget}: Exhibit {selectedFolder}
             </p>
           </div>
         </div>
