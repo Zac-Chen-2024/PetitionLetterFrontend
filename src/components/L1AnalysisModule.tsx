@@ -156,6 +156,7 @@ export default function L1AnalysisModule({
   const [summary, setSummary] = useState<L1Summary | null>(null);
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState<L1ProgressResponse | null>(null);
+  const [isExpanded, setIsExpanded] = useState(false);
 
   // SSE URL for progress monitoring
   const sseUrl = projectId ? analysisApi.getStreamUrl(projectId) : null;
@@ -278,7 +279,10 @@ export default function L1AnalysisModule({
   return (
     <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-gray-100 bg-gray-50/50">
+      <div
+        className="px-5 py-4 border-b border-gray-100 bg-gray-50/50 cursor-pointer hover:bg-gray-100/50 transition-colors"
+        onClick={() => setIsExpanded(!isExpanded)}
+      >
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600">
@@ -293,7 +297,10 @@ export default function L1AnalysisModule({
           </div>
           <div className="flex items-center gap-2">
             <button
-              onClick={handleStartAnalysis}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleStartAnalysis();
+              }}
               disabled={!projectId || status === 'processing'}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 text-white text-xs font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
@@ -310,11 +317,15 @@ export default function L1AnalysisModule({
               )}
             </button>
             <StatusBadge status={status} t={t} />
+            <div className="ml-2 text-gray-400">
+              {isExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Content */}
+      {isExpanded && (
       <div className="p-4">
         {!projectId ? (
           <div className="text-center py-8 text-gray-400">
@@ -424,6 +435,7 @@ export default function L1AnalysisModule({
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }
