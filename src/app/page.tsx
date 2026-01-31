@@ -10,6 +10,8 @@ import HighlightModule from '@/components/HighlightModule';
 import L1AnalysisModule from '@/components/L1AnalysisModule';
 import RelationshipModule from '@/components/RelationshipModule';
 import WritingModule from '@/components/WritingModule';
+import LanguageSwitcher from '@/components/LanguageSwitcher';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 // ============================================================================
 // VERSION INFO
@@ -90,6 +92,9 @@ function Toast({
 // MAIN COMPONENT
 // ============================================================================
 export default function App() {
+  // Language
+  const { t } = useLanguage();
+
   // Sidebar state
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
@@ -98,6 +103,8 @@ export default function App() {
   const [currentProject, setCurrentProject] = useState<Project | null>(null);
   const [projectsLoading, setProjectsLoading] = useState(true);
   const [creatingProject, setCreatingProject] = useState(false);
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [tempProjectName, setTempProjectName] = useState('');
 
   // Document state
   const [documents, setDocuments] = useState<Document[]>([]);
@@ -140,10 +147,9 @@ export default function App() {
   // ============================================================================
   useEffect(() => {
     console.log(
-      `%cPetitionLetter Frontend v${VERSION}%c\nBuild: ${BUILD_TIME} (New York Time)\n%c三模块布局版本`,
+      `%cPetitionLetter Frontend v${VERSION}%c\nBuild: ${BUILD_TIME} (New York Time)`,
       'color: #2563EB; font-size: 14px; font-weight: bold;',
-      'color: #64748B; font-size: 12px;',
-      'color: #10B981; font-size: 12px;'
+      'color: #64748B; font-size: 12px;'
     );
     loadProjects();
     checkBackendStatus();
@@ -168,7 +174,7 @@ export default function App() {
       }
     } catch (error) {
       console.error('Failed to load projects:', error);
-      showToast('加载项目失败', 'error');
+      showToast(t.project.loadFailed, 'error');
     } finally {
       setProjectsLoading(false);
     }
@@ -181,17 +187,17 @@ export default function App() {
       setProjects(prev => [newProject, ...prev]);
       setCurrentProject(newProject);
       setDocuments([]);
-      showToast('项目已创建', 'success');
+      showToast(t.project.projectCreated, 'success');
     } catch (error) {
       console.error('Failed to create project:', error);
-      showToast('创建项目失败', 'error');
+      showToast(t.project.createFailed, 'error');
     } finally {
       setCreatingProject(false);
     }
   };
 
   const deleteProject = async (projectId: string) => {
-    if (!confirm('确定要删除此项目吗？此操作无法撤销。')) return;
+    if (!confirm(t.project.deleteConfirm)) return;
 
     try {
       await projectApi.deleteProject(projectId);
@@ -199,10 +205,42 @@ export default function App() {
       if (currentProject?.id === projectId) {
         setCurrentProject(projects.find(p => p.id !== projectId) || null);
       }
-      showToast('项目已删除', 'success');
+      showToast(t.project.projectDeleted, 'success');
     } catch (error) {
       console.error('Failed to delete project:', error);
-      showToast('删除项目失败', 'error');
+      showToast(t.project.deleteFailed, 'error');
+    }
+  };
+
+  const startEditingProjectName = () => {
+    if (currentProject) {
+      setTempProjectName(currentProject.name);
+      setEditingProjectName(true);
+    }
+  };
+
+  const saveProjectName = async () => {
+    if (!currentProject || !tempProjectName.trim()) {
+      setEditingProjectName(false);
+      return;
+    }
+
+    const newName = tempProjectName.trim();
+    if (newName === currentProject.name) {
+      setEditingProjectName(false);
+      return;
+    }
+
+    try {
+      const updated = await projectApi.updateProject(currentProject.id, { name: newName });
+      setCurrentProject(updated);
+      setProjects(prev => prev.map(p => p.id === currentProject.id ? updated : p));
+      showToast(t.project.projectRenamed, 'success');
+    } catch (error) {
+      console.error('Failed to rename project:', error);
+      showToast(t.project.renameFailed, 'error');
+    } finally {
+      setEditingProjectName(false);
     }
   };
 
@@ -284,7 +322,7 @@ export default function App() {
             }`}
           >
             <Icons.Plus />
-            {!sidebarCollapsed && <span>新建项目</span>}
+            {!sidebarCollapsed && <span>{t.project.newProject}</span>}
           </button>
         </div>
 
@@ -298,7 +336,7 @@ export default function App() {
             </div>
           ) : projects.length === 0 ? (
             !sidebarCollapsed && (
-              <p className="text-sm text-gray-500 text-center py-4">暂无项目</p>
+              <p className="text-sm text-gray-500 text-center py-4">{t.project.noProjects}</p>
             )
           ) : (
             <div className="space-y-1">
@@ -351,7 +389,7 @@ export default function App() {
             />
             {!sidebarCollapsed && (
               <span className="text-xs text-gray-500">
-                {backendStatus === 'online' ? '已连接' : backendStatus === 'offline' ? '已断开' : '检查中...'}
+                {backendStatus === 'online' ? t.backend.connected : backendStatus === 'offline' ? t.backend.disconnected : t.backend.checking}
               </span>
             )}
           </div>
@@ -363,27 +401,51 @@ export default function App() {
         {/* Header */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-6 flex-shrink-0">
           <div>
-            <h2 className="font-semibold text-gray-900">
-              {currentProject?.name || '选择一个项目'}
-            </h2>
+            {editingProjectName ? (
+              <input
+                type="text"
+                value={tempProjectName}
+                onChange={(e) => setTempProjectName(e.target.value)}
+                onBlur={saveProjectName}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') saveProjectName();
+                  if (e.key === 'Escape') setEditingProjectName(false);
+                }}
+                autoFocus
+                className="font-semibold text-gray-900 bg-gray-100 px-2 py-1 rounded border border-gray-300 focus:outline-none focus:border-blue-500"
+              />
+            ) : (
+              <h2
+                className={`font-semibold text-gray-900 ${currentProject ? 'cursor-pointer hover:text-blue-600' : ''}`}
+                onClick={currentProject ? startEditingProjectName : undefined}
+                title={currentProject ? t.project.clickToRename : undefined}
+              >
+                {currentProject?.name || t.project.selectProject}
+              </h2>
+            )}
             {currentProject && (
               <p className="text-xs text-gray-500">
-                {documents.length} 个文档 | 三模块流水线
+                {documents.length} {t.project.documents}
               </p>
             )}
           </div>
 
-          {/* Refresh Button */}
-          {currentProject && (
-            <button
-              onClick={loadDocuments}
-              disabled={documentsLoading}
-              className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
-            >
-              <Icons.Refresh />
-              刷新
-            </button>
-          )}
+          <div className="flex items-center gap-2">
+            {/* Language Switcher */}
+            <LanguageSwitcher />
+
+            {/* Refresh Button */}
+            {currentProject && (
+              <button
+                onClick={loadDocuments}
+                disabled={documentsLoading}
+                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Icons.Refresh />
+                {t.common.refresh}
+              </button>
+            )}
+          </div>
         </header>
 
         {/* Content Area - Three Modules */}
@@ -400,17 +462,17 @@ export default function App() {
                     </svg>
                   </div>
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-800">模型加载中，请稍候...</p>
+                    <p className="text-sm font-medium text-amber-800">{t.backend.modelsLoading}</p>
                     <div className="flex gap-4 mt-1 text-xs text-amber-600">
                       <span>
-                        OCR: {preloadStatus.models.ocr.status === 'loaded' ? '✓ 已加载' :
-                              preloadStatus.models.ocr.status === 'loading' ? `加载中 ${preloadStatus.models.ocr.progress}%` :
-                              preloadStatus.models.ocr.status === 'error' ? `✗ 错误` : '等待'}
+                        OCR: {preloadStatus.models.ocr.status === 'loaded' ? `✓ ${t.backend.modelLoaded}` :
+                              preloadStatus.models.ocr.status === 'loading' ? `${t.backend.modelLoading} ${preloadStatus.models.ocr.progress}%` :
+                              preloadStatus.models.ocr.status === 'error' ? `✗ ${t.backend.modelError}` : t.backend.modelWaiting}
                       </span>
                       <span>
-                        LLM: {preloadStatus.models.llm.status === 'loaded' ? '✓ 已加载' :
-                              preloadStatus.models.llm.status === 'loading' ? `加载中 ${preloadStatus.models.llm.progress}%` :
-                              preloadStatus.models.llm.status === 'error' ? `✗ 错误` : '等待'}
+                        LLM: {preloadStatus.models.llm.status === 'loaded' ? `✓ ${t.backend.modelLoaded}` :
+                              preloadStatus.models.llm.status === 'loading' ? `${t.backend.modelLoading} ${preloadStatus.models.llm.progress}%` :
+                              preloadStatus.models.llm.status === 'error' ? `✗ ${t.backend.modelError}` : t.backend.modelWaiting}
                       </span>
                     </div>
                   </div>
@@ -425,13 +487,13 @@ export default function App() {
                 <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center text-blue-500 mx-auto mb-4">
                   <Icons.Folder />
                 </div>
-                <p className="text-lg font-medium text-gray-900">未选择项目</p>
-                <p className="text-gray-500 mt-2">创建或选择一个项目开始使用</p>
+                <p className="text-lg font-medium text-gray-900">{t.project.selectProject}</p>
+                <p className="text-gray-500 mt-2">{t.project.createFirst}</p>
                 <button
                   onClick={createProject}
                   className="mt-4 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
                 >
-                  创建新项目
+                  {t.project.newProject}
                 </button>
               </div>
             </div>

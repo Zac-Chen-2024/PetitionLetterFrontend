@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { highlightApi, type HighlightItem } from '@/utils/api';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 interface PDFHighlightViewerProps {
   documentId: string | null;
@@ -67,6 +68,8 @@ export default function PDFHighlightViewer({
   onPageChange,
   selectedHighlightId,
 }: PDFHighlightViewerProps) {
+  const { t } = useLanguage();
+
   // Use controlled page if provided, otherwise use internal state
   const [internalPage, setInternalPage] = useState(1);
   const currentPage = controlledPage ?? internalPage;
@@ -123,7 +126,7 @@ export default function PDFHighlightViewer({
         setHighlights(highlightData.highlights || []);
       } catch (err) {
         console.error('Failed to load page data:', err);
-        setError('无法加载页面');
+        setError(t.pdfViewer.loadFailed);
         setImageUrl(null);
         setHighlights([]);
       } finally {
@@ -199,7 +202,7 @@ export default function PDFHighlightViewer({
           <svg className="w-16 h-16 mx-auto mb-4 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
           </svg>
-          <p className="text-sm text-gray-500">选择文件查看预览</p>
+          <p className="text-sm text-gray-500">{t.pdfViewer.selectFile}</p>
         </div>
       </div>
     );
@@ -215,7 +218,7 @@ export default function PDFHighlightViewer({
             onClick={handleZoomOut}
             disabled={zoom <= 50}
             className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="缩小"
+            title={t.pdfViewer.zoomOut}
           >
             <ZoomOutIcon />
           </button>
@@ -224,7 +227,7 @@ export default function PDFHighlightViewer({
             onClick={handleZoomIn}
             disabled={zoom >= 200}
             className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="放大"
+            title={t.pdfViewer.zoomIn}
           >
             <ZoomInIcon />
           </button>
@@ -255,7 +258,7 @@ export default function PDFHighlightViewer({
         <button
           onClick={handleDownload}
           className="p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded transition-colors"
-          title="下载当前页"
+          title={t.pdfViewer.downloadPage}
         >
           <DownloadIcon />
         </button>
@@ -293,7 +296,7 @@ export default function PDFHighlightViewer({
                     height: img.naturalHeight,
                   });
                 }}
-                onError={() => setError('图片加载失败')}
+                onError={() => setError(t.pdfViewer.imageFailed)}
               />
 
               {/* Highlight Overlays */}
@@ -326,7 +329,7 @@ export default function PDFHighlightViewer({
                       borderRadius: '2px',
                     }}
                     onClick={() => setSelectedHighlight(highlight)}
-                    title={highlight.text_content || '高光区域'}
+                    title={highlight.text_content || t.highlight.highlightArea}
                   />
                 );
               })}
@@ -334,7 +337,7 @@ export default function PDFHighlightViewer({
           </div>
         ) : (
           <div className="absolute inset-0 flex items-center justify-center">
-            <p className="text-sm text-gray-500">无法加载页面</p>
+            <p className="text-sm text-gray-500">{t.pdfViewer.loadFailed}</p>
           </div>
         )}
       </div>
@@ -358,17 +361,17 @@ export default function PDFHighlightViewer({
                       ? 'bg-yellow-100 text-yellow-700'
                       : 'bg-gray-100 text-gray-700'
                   }`}>
-                    {selectedHighlight.importance === 'high' ? '高重要' :
-                     selectedHighlight.importance === 'medium' ? '中等' : '低'}
+                    {selectedHighlight.importance === 'high' ? t.pdfViewer.highImportance :
+                     selectedHighlight.importance === 'medium' ? t.pdfViewer.mediumImportance : t.pdfViewer.lowImportance}
                   </span>
                 )}
               </div>
               <p className="text-sm text-gray-800 line-clamp-2">
-                {selectedHighlight.text_content || '无文本内容'}
+                {selectedHighlight.text_content || t.highlight.noTextContent}
               </p>
               {selectedHighlight.reason && (
                 <p className="text-xs text-gray-600 mt-1 line-clamp-1">
-                  <span className="font-medium">原因:</span> {selectedHighlight.reason}
+                  <span className="font-medium">{t.pdfViewer.reason}:</span> {selectedHighlight.reason}
                 </p>
               )}
             </div>
@@ -387,7 +390,7 @@ export default function PDFHighlightViewer({
       {/* Highlights count footer */}
       {highlights.length > 0 && (
         <div className="px-3 py-1.5 bg-gray-50 border-t border-gray-100 text-xs text-gray-500 text-center">
-          当前页 {highlights.length} 个高光区域
+          {t.highlight.currentPage} {highlights.length} {t.highlight.highlightAreas}
         </div>
       )}
     </div>

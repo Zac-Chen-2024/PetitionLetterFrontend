@@ -10,6 +10,7 @@ import {
   SelectionEditMode,
 } from '@/types';
 import { writingApi, analysisApi, citationApi } from '@/utils/api';
+import { useLanguage } from '@/i18n/LanguageContext';
 import SectionTabs from './SectionTabs';
 import WritingEditor from './WritingEditor';
 import DialogPanel from './DialogPanel';
@@ -74,6 +75,8 @@ export default function WritingModule({
   onError,
   modelsReady = true,
 }: WritingModuleProps) {
+  const { t } = useLanguage();
+
   // Section state
   const [activeSection, setActiveSection] = useState<L1StandardKey>('qualifying_relationship');
   const [sectionData, setSectionData] = useState<Record<L1StandardKey, SectionData>>({
@@ -232,10 +235,10 @@ export default function WritingModule({
       setCurrentSelection(null);
       window.getSelection()?.removeAllRanges();
 
-      onSuccess?.('Content updated');
+      onSuccess?.(t.writing.contentUpdated);
     } catch (err) {
       console.error('Failed to apply changes:', err);
-      onError?.('Failed to apply changes');
+      onError?.(t.writing.applyFailed);
 
       // Add error message
       const errorMessage: DialogMessage = {
@@ -279,11 +282,11 @@ export default function WritingModule({
           },
         }));
 
-        onSuccess?.('Paragraph generated');
+        onSuccess?.(t.writing.paragraphGenerated);
       }
     } catch (err) {
       console.error('Failed to generate paragraph:', err);
-      onError?.('Failed to generate paragraph');
+      onError?.(t.writing.generateFailed);
     } finally {
       setIsGenerating(false);
     }
@@ -308,10 +311,10 @@ export default function WritingModule({
         },
       }));
 
-      onSuccess?.('Content saved');
+      onSuccess?.(t.writing.contentSaved);
     } catch (err) {
       console.error('Failed to save:', err);
-      onError?.('Failed to save');
+      onError?.(t.writing.saveFailed);
     } finally {
       setIsSaving(false);
     }
@@ -334,8 +337,8 @@ export default function WritingModule({
             <Icons.Edit />
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">Writing Editor</h3>
-            <p className="text-xs text-gray-500">Draft and refine petition letter paragraphs</p>
+            <h3 className="font-semibold text-gray-900">{t.writing.title}</h3>
+            <p className="text-xs text-gray-500">{t.writing.subtitle}</p>
           </div>
         </div>
 
@@ -344,7 +347,7 @@ export default function WritingModule({
           <button
             onClick={() => setShowModeSettings(!showModeSettings)}
             className="p-2 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            title="Layout settings"
+            title={t.writing.dialogPosition}
           >
             <Icons.Settings />
           </button>
@@ -363,7 +366,7 @@ export default function WritingModule({
             ) : (
               <Icons.Generate />
             )}
-            Generate
+            {t.writing.generate}
           </button>
 
           {/* Save button */}
@@ -380,7 +383,7 @@ export default function WritingModule({
             ) : (
               <Icons.Save />
             )}
-            Save
+            {t.writing.save}
           </button>
         </div>
       </div>
@@ -389,25 +392,25 @@ export default function WritingModule({
       {showModeSettings && (
         <div className="px-6 py-3 border-b border-gray-200 bg-gray-50 flex items-center gap-6">
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Dialog position:</span>
+            <span className="text-sm text-gray-600">{t.writing.dialogPosition}:</span>
             <select
               value={dialogLayoutMode}
               onChange={(e) => setDialogLayoutMode(e.target.value as DialogLayoutMode)}
               className="text-sm border border-gray-300 rounded px-2 py-1"
             >
-              <option value="bottom">Bottom (ChatGPT style)</option>
-              <option value="right">Right panel</option>
+              <option value="bottom">{t.writing.bottom}</option>
+              <option value="right">{t.writing.rightPanel}</option>
             </select>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Selection edit:</span>
+            <span className="text-sm text-gray-600">{t.writing.selectionEdit}:</span>
             <select
               value={selectionEditMode}
               onChange={(e) => setSelectionEditMode(e.target.value as SelectionEditMode)}
               className="text-sm border border-gray-300 rounded px-2 py-1"
             >
-              <option value="bubble">Floating bubble</option>
-              <option value="panel">Side panel</option>
+              <option value="bubble">{t.writing.floatingBubble}</option>
+              <option value="panel">{t.writing.sidePanel}</option>
             </select>
           </div>
         </div>
@@ -455,7 +458,7 @@ export default function WritingModule({
       {/* Models not ready warning */}
       {!modelsReady && (
         <div className="px-6 py-3 bg-amber-50 border-t border-amber-200 text-sm text-amber-700">
-          LLM models are loading. Generation features will be available soon.
+          {t.writing.modelsLoading}
         </div>
       )}
     </div>

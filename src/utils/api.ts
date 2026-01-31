@@ -651,7 +651,7 @@ export const projectApi = {
     fetchApi<Project>(`/api/projects/${projectId}`),
 
   // Update project meta (beneficiary name, etc.)
-  updateProject: (projectId: string, updates: { beneficiaryName?: string; petitionerName?: string; foreignEntityName?: string }) =>
+  updateProject: (projectId: string, updates: { name?: string; beneficiaryName?: string; petitionerName?: string; foreignEntityName?: string }) =>
     fetchApi<Project>(`/api/projects/${projectId}`, {
       method: 'PATCH',
       body: JSON.stringify(updates),

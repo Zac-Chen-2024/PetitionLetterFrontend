@@ -6,6 +6,7 @@ import { useSSE } from '@/hooks/useSSE';
 import { usePolling } from '@/hooks/usePolling';
 import type { Document } from '@/types';
 import PDFHighlightViewer from './PDFHighlightViewer';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 // SSE support detection
 const supportsSSE = typeof window !== 'undefined' && typeof EventSource !== 'undefined';
@@ -59,22 +60,22 @@ const ChevronRightIcon = () => (
 );
 
 // Status indicators
-const StatusIcon = ({ status }: { status: HighlightFileStatus }) => {
+const StatusIcon = ({ status, t }: { status: HighlightFileStatus; t: ReturnType<typeof useLanguage>['t'] }) => {
   switch (status) {
     case 'not_started':
     case 'pending':
-      return <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" title="待分析" />;
+      return <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" title={t.highlight.pending} />;
     case 'processing':
       return (
-        <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse flex-shrink-0" title="分析中" />
+        <span className="w-2.5 h-2.5 rounded-full bg-yellow-500 animate-pulse flex-shrink-0" title={t.highlight.status.processing} />
       );
     case 'completed':
       return (
-        <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" title="完成" />
+        <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" title={t.highlight.status.completed} />
       );
     case 'failed':
       return (
-        <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" title="失败" />
+        <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" title={t.ocr.failed} />
       );
   }
 };
@@ -87,6 +88,7 @@ export default function HighlightModule({
   onError,
   modelsReady = true,
 }: HighlightModuleProps) {
+  const { t } = useLanguage();
   const [highlightFiles, setHighlightFiles] = useState<HighlightFile[]>([]);
   const [selectedFile, setSelectedFile] = useState<HighlightFile | null>(null);
   const [listCollapsed, setListCollapsed] = useState(false);
@@ -131,11 +133,11 @@ export default function HighlightModule({
     setIsProcessing(false);
     onHighlightComplete();
     if (progress.failed > 0) {
-      onError(`高光分析完成: ${progress.completed} 成功, ${progress.failed} 失败`);
+      onError(`${t.highlight.analysisComplete}: ${progress.completed} ${t.common.success}, ${progress.failed} ${t.ocr.failed}`);
     } else if (progress.completed > 0) {
-      onSuccess(`高光分析完成: ${progress.completed} 个文档已处理`);
+      onSuccess(`${t.highlight.analysisComplete}: ${progress.completed} ${t.l1Analysis.documents}`);
     }
-  }, [onHighlightComplete, onError, onSuccess]);
+  }, [onHighlightComplete, onError, onSuccess, t]);
 
   // Use SSE hook for real-time progress (primary method)
   const {
@@ -176,7 +178,7 @@ export default function HighlightModule({
     },
     onMaxErrors: () => {
       setIsProcessing(false);
-      onError('无法连接后端服务，请检查后端是否运行');
+      onError(t.backend.cannotConnect);
       setHighlightFiles(prev => prev.map(f =>
         f.status === 'processing'
           ? { ...f, status: 'pending' as HighlightFileStatus }
@@ -185,7 +187,7 @@ export default function HighlightModule({
     },
     onTimeout: () => {
       setIsProcessing(false);
-      onError('高光分析处理超时，请检查后端状态');
+      onError(t.highlight.timeout);
       setHighlightFiles(prev => prev.map(f =>
         f.status === 'processing'
           ? { ...f, status: 'pending' as HighlightFileStatus }
@@ -339,8 +341,8 @@ export default function HighlightModule({
     } catch (error) {
       console.error('Highlight failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
-        ? '无法连接后端服务'
-        : '高光分析启动失败';
+        ? t.backend.cannotConnect
+        : t.highlight.analysisFailed;
       onError(errorMsg);
       setHighlightFiles(prev => prev.map(f =>
         f.id === file.id ? { ...f, status: 'pending' as HighlightFileStatus } : f
@@ -361,15 +363,15 @@ export default function HighlightModule({
       ));
 
       await highlightApi.triggerBatch(projectId);
-      onSuccess('高光分析已启动');
+      onSuccess(t.highlight.analysisComplete);
 
       // Start SSE or polling to monitor progress
       startMonitoring();
     } catch (error) {
       console.error('Batch highlight failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
-        ? '无法连接后端服务'
-        : '批量高光分析启动失败';
+        ? t.backend.cannotConnect
+        : t.highlight.batchFailed;
       onError(errorMsg);
 
       // Reset processing to pending
@@ -432,9 +434,9 @@ export default function HighlightModule({
   // Status badge component
   const StatusBadge = ({ status }: { status: ModuleStatus }) => {
     const config = {
-      idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: '等待分析' },
-      processing: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: '分析中' },
-      completed: { bg: 'bg-green-100', text: 'text-green-700', label: '已完成' },
+      idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: t.highlight.status.idle },
+      processing: { bg: 'bg-yellow-100', text: 'text-yellow-700', label: t.highlight.status.processing },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: t.highlight.status.completed },
     };
     const { bg, text, label } = config[status];
     return (
@@ -453,9 +455,9 @@ export default function HighlightModule({
             <div className="w-8 h-8 bg-yellow-100 rounded-lg flex items-center justify-center text-yellow-600">
               <HighlightIcon />
             </div>
-            <h3 className="text-base font-semibold text-gray-900">高光模块</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t.highlight.title}</h3>
             <span className="text-xs text-gray-500">
-              {completedCount}/{highlightFiles.length} 已完成
+              {completedCount}/{highlightFiles.length} {t.highlight.completed}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -463,10 +465,10 @@ export default function HighlightModule({
               onClick={handleStartAll}
               disabled={pendingCount === 0 || isProcessing || !modelsReady}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-yellow-500 text-white text-xs font-medium rounded-lg hover:bg-yellow-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title={!modelsReady ? '模型加载中...' : undefined}
+              title={!modelsReady ? t.backend.modelsLoading : undefined}
             >
               <PlayIcon />
-              {!modelsReady ? '模型加载中...' : '全部分析'}
+              {!modelsReady ? t.backend.modelsLoading : t.highlight.analyzeAll}
             </button>
             <StatusBadge status={moduleStatus} />
           </div>
@@ -484,12 +486,12 @@ export default function HighlightModule({
           {/* List Header */}
           <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
             {!listCollapsed && (
-              <span className="text-xs font-medium text-gray-600">文件列表</span>
+              <span className="text-xs font-medium text-gray-600">{t.highlight.fileList}</span>
             )}
             <button
               onClick={() => setListCollapsed(!listCollapsed)}
               className="p-1 hover:bg-gray-200 rounded transition-colors"
-              title={listCollapsed ? '展开' : '折叠'}
+              title={listCollapsed ? t.common.expand : t.common.collapse}
             >
               {listCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
             </button>
@@ -500,8 +502,8 @@ export default function HighlightModule({
             <div className="flex-1 overflow-y-auto">
               {highlightFiles.length === 0 ? (
                 <div className="p-4 text-center text-xs text-gray-400">
-                  暂无可分析的文件
-                  <p className="mt-1">请先完成 OCR</p>
+                  {t.highlight.noFiles}
+                  <p className="mt-1">{t.highlight.completeOcrFirst}</p>
                 </div>
               ) : (
                 <div className="py-1">
@@ -515,7 +517,7 @@ export default function HighlightModule({
                           : 'hover:bg-gray-50'
                       }`}
                     >
-                      <StatusIcon status={file.status} />
+                      <StatusIcon status={file.status} t={t} />
                       <div className="flex-1 min-w-0">
                         <p className="text-xs font-medium text-gray-700 truncate">
                           {file.exhibitNumber}
@@ -532,7 +534,7 @@ export default function HighlightModule({
                           }}
                           className="px-1.5 py-0.5 text-xs text-yellow-600 hover:bg-yellow-100 rounded transition-colors"
                         >
-                          分析
+                          {t.highlight.analyze}
                         </button>
                       )}
                     </div>
@@ -552,7 +554,7 @@ export default function HighlightModule({
                   }`}
                   title={`${file.exhibitNumber}: ${file.fileName}`}
                 >
-                  <StatusIcon status={file.status} />
+                  <StatusIcon status={file.status} t={t} />
                 </div>
               ))}
             </div>
@@ -565,8 +567,8 @@ export default function HighlightModule({
           <div className="px-4 py-2 border-b border-gray-100 bg-gray-50">
             <span className="text-xs font-medium text-gray-600">
               {selectedFile
-                ? `PDF 预览 - ${selectedFile.exhibitNumber}: ${selectedFile.fileName}`
-                : 'PDF 预览'}
+                ? `${t.highlight.pdfPreview} - ${selectedFile.exhibitNumber}: ${selectedFile.fileName}`
+                : t.highlight.pdfPreview}
             </span>
           </div>
 
@@ -594,13 +596,13 @@ export default function HighlightModule({
             <button
               onClick={() => setRightPanelCollapsed(!rightPanelCollapsed)}
               className="p-1 hover:bg-gray-200 rounded transition-colors"
-              title={rightPanelCollapsed ? '展开' : '折叠'}
+              title={rightPanelCollapsed ? t.common.expand : t.common.collapse}
             >
               {rightPanelCollapsed ? <ChevronLeftIcon /> : <ChevronRightIcon />}
             </button>
             {!rightPanelCollapsed && (
               <span className="text-xs font-medium text-gray-600">
-                高光列表 {allHighlights.length > 0 && `(${allHighlights.length})`}
+                {t.highlight.highlightList} {allHighlights.length > 0 && `(${allHighlights.length})`}
               </span>
             )}
           </div>
@@ -615,8 +617,8 @@ export default function HighlightModule({
               ) : allHighlights.length === 0 ? (
                 <div className="p-4 text-center text-xs text-gray-400">
                   {selectedFile?.status === 'completed'
-                    ? '暂无高光'
-                    : '完成分析后显示高光'}
+                    ? t.highlight.noHighlights
+                    : t.highlight.showAfterAnalysis}
                 </div>
               ) : (
                 <div className="py-1">
@@ -640,12 +642,12 @@ export default function HighlightModule({
                         )}
                         {highlight.importance === 'high' && (
                           <span className="px-1.5 py-0.5 text-xs rounded bg-red-100 text-red-600">
-                            重要
+                            {t.highlight.important}
                           </span>
                         )}
                       </div>
                       <p className="text-xs text-gray-700 line-clamp-2">
-                        {highlight.text_content || '无文本内容'}
+                        {highlight.text_content || t.highlight.noTextContent}
                       </p>
                     </div>
                   ))}
@@ -656,7 +658,7 @@ export default function HighlightModule({
             // Collapsed view - show count only
             <div className="flex-1 flex flex-col items-center py-4">
               <span className="text-xs text-gray-500 [writing-mode:vertical-lr]">
-                {allHighlights.length > 0 ? `${allHighlights.length} 高光` : '无高光'}
+                {allHighlights.length > 0 ? `${allHighlights.length} ${t.highlight.highlightAreas}` : t.highlight.noHighlights}
               </span>
             </div>
           )}

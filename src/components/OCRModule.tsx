@@ -5,6 +5,7 @@ import { ocrApi, type OCRProgressResponse } from '@/utils/api';
 import { useSSE } from '@/hooks/useSSE';
 import { usePolling } from '@/hooks/usePolling';
 import type { Document } from '@/types';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 // SSE support detection
 const supportsSSE = typeof window !== 'undefined' && typeof EventSource !== 'undefined';
@@ -58,24 +59,24 @@ const ChevronRightIcon = () => (
   </svg>
 );
 
-// Status indicators
-const StatusIcon = ({ status }: { status: OCRFileStatus }) => {
+// Status indicators - wrapped in component to access translations
+const StatusIcon = ({ status, t }: { status: OCRFileStatus; t: ReturnType<typeof useLanguage>['t'] }) => {
   switch (status) {
     case 'pending':
-      return <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" title="待处理" />;
+      return <span className="w-2.5 h-2.5 rounded-full bg-gray-300 flex-shrink-0" title={t.ocr.pending} />;
     case 'queued':
-      return <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 flex-shrink-0" title="队列中" />;
+      return <span className="w-2.5 h-2.5 rounded-full bg-yellow-400 flex-shrink-0" title={t.ocr.queued} />;
     case 'processing':
       return (
-        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0" title="处理中" />
+        <span className="w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse flex-shrink-0" title={t.ocr.processing} />
       );
     case 'completed':
       return (
-        <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" title="完成" />
+        <span className="w-2.5 h-2.5 rounded-full bg-green-500 flex-shrink-0" title={t.ocr.status.completed} />
       );
     case 'failed':
       return (
-        <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" title="失败" />
+        <span className="w-2.5 h-2.5 rounded-full bg-red-500 flex-shrink-0" title={t.ocr.failed} />
       );
   }
 };
@@ -88,6 +89,7 @@ export default function OCRModule({
   onError,
   modelsReady = true,
 }: OCRModuleProps) {
+  const { t } = useLanguage();
   const [ocrFiles, setOcrFiles] = useState<OCRFile[]>([]);
   const [selectedFileId, setSelectedFileId] = useState<string | null>(null);
   const [selectedOCRText, setSelectedOCRText] = useState<string>('');
@@ -138,11 +140,11 @@ export default function OCRModule({
     setCurrentProcessing(null);  // Clear page progress
     onOCRComplete();
     if (progress.failed > 0) {
-      onError(`OCR 完成: ${progress.completed} 成功, ${progress.failed} 失败`);
+      onError(`${t.ocr.ocrComplete}: ${progress.completed} ${t.common.success}, ${progress.failed} ${t.ocr.failed}`);
     } else if (progress.completed > 0) {
-      onSuccess(`OCR 完成: ${progress.completed} 个文档已处理`);
+      onSuccess(`${t.ocr.ocrComplete}: ${progress.completed} ${t.l1Analysis.documents}`);
     }
-  }, [onOCRComplete, onError, onSuccess]);
+  }, [onOCRComplete, onError, onSuccess, t]);
 
   // Use SSE hook for real-time progress (primary method)
   const {
@@ -185,7 +187,7 @@ export default function OCRModule({
     },
     onMaxErrors: () => {
       setIsProcessing(false);
-      onError('无法连接后端服务，请检查后端是否运行');
+      onError(t.backend.cannotConnect);
       // Reset processing files to pending
       setOcrFiles(prev => prev.map(f =>
         f.status === 'processing' || f.status === 'queued'
@@ -195,7 +197,7 @@ export default function OCRModule({
     },
     onTimeout: () => {
       setIsProcessing(false);
-      onError('OCR 处理超时，请检查后端状态');
+      onError(t.ocr.timeout);
       // Reset processing files to pending
       setOcrFiles(prev => prev.map(f =>
         f.status === 'processing' || f.status === 'queued'
@@ -274,8 +276,8 @@ export default function OCRModule({
     } catch (error) {
       console.error('OCR failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
-        ? '无法连接后端服务'
-        : 'OCR 启动失败';
+        ? t.backend.cannotConnect
+        : t.ocr.ocrFailed;
       onError(errorMsg);
       setOcrFiles(prev => prev.map(f =>
         f.id === documentId ? { ...f, status: 'pending' as OCRFileStatus } : f
@@ -294,15 +296,15 @@ export default function OCRModule({
       ));
 
       await ocrApi.triggerBatch(projectId);
-      onSuccess('OCR 处理已启动');
+      onSuccess(t.ocr.ocrComplete);
 
       // Start SSE or polling to monitor progress
       startMonitoring();
     } catch (error) {
       console.error('Batch OCR failed:', error);
       const errorMsg = error instanceof Error && error.message.includes('fetch')
-        ? '无法连接后端服务'
-        : '批量 OCR 启动失败';
+        ? t.backend.cannotConnect
+        : t.ocr.batchFailed;
       onError(errorMsg);
 
       // Reset queued to pending
@@ -321,9 +323,9 @@ export default function OCRModule({
   // Status badge component
   const StatusBadge = ({ status }: { status: ModuleStatus }) => {
     const config = {
-      idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: '等待处理' },
-      processing: { bg: 'bg-blue-100', text: 'text-blue-700', label: '处理中' },
-      completed: { bg: 'bg-green-100', text: 'text-green-700', label: '已完成' },
+      idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: t.ocr.status.idle },
+      processing: { bg: 'bg-blue-100', text: 'text-blue-700', label: t.ocr.status.processing },
+      completed: { bg: 'bg-green-100', text: 'text-green-700', label: t.ocr.status.completed },
     };
     const { bg, text, label } = config[status];
     return (
@@ -344,9 +346,9 @@ export default function OCRModule({
             <div className="w-8 h-8 bg-purple-100 rounded-lg flex items-center justify-center text-purple-600">
               <ScanIcon />
             </div>
-            <h3 className="text-base font-semibold text-gray-900">OCR 模块</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t.ocr.title}</h3>
             <span className="text-xs text-gray-500">
-              {completedCount}/{ocrFiles.length} 已完成
+              {completedCount}/{ocrFiles.length} {t.ocr.completed}
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -354,10 +356,10 @@ export default function OCRModule({
               onClick={handleStartAll}
               disabled={pendingCount === 0 || isProcessing || !modelsReady}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600 text-white text-xs font-medium rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              title={!modelsReady ? '模型加载中...' : undefined}
+              title={!modelsReady ? t.backend.modelsLoading : undefined}
             >
               <PlayIcon />
-              {!modelsReady ? '模型加载中...' : '全部开始'}
+              {!modelsReady ? t.backend.modelsLoading : t.ocr.startAll}
             </button>
             <StatusBadge status={moduleStatus} />
           </div>
@@ -375,12 +377,12 @@ export default function OCRModule({
           {/* List Header */}
           <div className="px-3 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
             {!listCollapsed && (
-              <span className="text-xs font-medium text-gray-600">文件列表</span>
+              <span className="text-xs font-medium text-gray-600">{t.ocr.fileList}</span>
             )}
             <button
               onClick={() => setListCollapsed(!listCollapsed)}
               className="p-1 hover:bg-gray-200 rounded transition-colors"
-              title={listCollapsed ? '展开' : '折叠'}
+              title={listCollapsed ? t.common.expand : t.common.collapse}
             >
               {listCollapsed ? <ChevronRightIcon /> : <ChevronLeftIcon />}
             </button>
@@ -391,7 +393,7 @@ export default function OCRModule({
             <div className="flex-1 overflow-y-auto">
               {ocrFiles.length === 0 ? (
                 <div className="p-4 text-center text-xs text-gray-400">
-                  暂无文件
+                  {t.ocr.noFiles}
                 </div>
               ) : (
                 <div className="py-1">
@@ -406,7 +408,7 @@ export default function OCRModule({
                       } ${file.status !== 'completed' ? 'opacity-60' : ''}`}
                     >
                       <div className="flex items-center gap-2">
-                        <StatusIcon status={file.status} />
+                        <StatusIcon status={file.status} t={t} />
                         <div className="flex-1 min-w-0">
                           <p className="text-xs font-medium text-gray-700 truncate">
                             {file.exhibitNumber}
@@ -423,7 +425,7 @@ export default function OCRModule({
                             }}
                             className="px-1.5 py-0.5 text-xs text-purple-600 hover:bg-purple-100 rounded transition-colors"
                           >
-                            开始
+                            {t.ocr.start}
                           </button>
                         )}
                       </div>
@@ -432,7 +434,7 @@ export default function OCRModule({
                       {currentProcessing?.documentId === file.id && currentProcessing.totalPages > 0 && (
                         <div className="mt-2">
                           <div className="flex justify-between text-xs text-gray-500 mb-1">
-                            <span>第 {currentProcessing.currentPage}/{currentProcessing.totalPages} 页</span>
+                            <span>{t.ocr.page} {currentProcessing.currentPage}/{currentProcessing.totalPages}</span>
                             <span>{Math.round((currentProcessing.currentPage / currentProcessing.totalPages) * 100)}%</span>
                           </div>
                           <div className="h-1.5 bg-gray-200 rounded-full overflow-hidden">
@@ -460,7 +462,7 @@ export default function OCRModule({
                   }`}
                   title={`${file.exhibitNumber}: ${file.fileName}`}
                 >
-                  <StatusIcon status={file.status} />
+                  <StatusIcon status={file.status} t={t} />
                 </div>
               ))}
             </div>
@@ -473,8 +475,8 @@ export default function OCRModule({
           <div className="px-4 py-2 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
             <span className="text-xs font-medium text-gray-600">
               {selectedFile
-                ? `OCR 结果 - ${selectedFile.exhibitNumber}: ${selectedFile.fileName}`
-                : 'OCR 结果预览'}
+                ? `${t.ocr.result} - ${selectedFile.exhibitNumber}: ${selectedFile.fileName}`
+                : t.ocr.resultPreview}
             </span>
             {selectedOCRText && (
               <button
@@ -487,7 +489,7 @@ export default function OCRModule({
                 }}
                 className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 hover:bg-gray-200 rounded transition-colors"
               >
-                复制
+                {t.common.copy}
               </button>
             )}
           </div>
@@ -506,7 +508,7 @@ export default function OCRModule({
                   <svg className="w-12 h-12 mx-auto mb-3 text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                   </svg>
-                  <p className="text-sm">选择一个已完成 OCR 的文件查看结果</p>
+                  <p className="text-sm">{t.ocr.selectCompleted}</p>
                 </div>
               </div>
             )}

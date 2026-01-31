@@ -5,6 +5,7 @@ import { analysisApi, L1ProgressResponse } from '@/utils/api';
 import { useSSE } from '@/hooks/useSSE';
 import type { L1Summary, Quote, L1StandardKey } from '@/types';
 import { L1_STANDARDS } from '@/types';
+import { useLanguage } from '@/i18n/LanguageContext';
 
 // Types
 type ModuleStatus = 'idle' | 'processing' | 'completed' | 'error';
@@ -42,12 +43,12 @@ const ChevronUpIcon = () => (
 );
 
 // Status badge component
-const StatusBadge = ({ status }: { status: ModuleStatus }) => {
+const StatusBadge = ({ status, t }: { status: ModuleStatus; t: ReturnType<typeof useLanguage>['t'] }) => {
   const config = {
-    idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: '等待分析' },
-    processing: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: '分析中' },
-    completed: { bg: 'bg-green-100', text: 'text-green-700', label: '已完成' },
-    error: { bg: 'bg-red-100', text: 'text-red-700', label: '分析失败' },
+    idle: { bg: 'bg-gray-100', text: 'text-gray-600', label: t.l1Analysis.status.idle },
+    processing: { bg: 'bg-indigo-100', text: 'text-indigo-700', label: t.l1Analysis.status.processing },
+    completed: { bg: 'bg-green-100', text: 'text-green-700', label: t.l1Analysis.status.completed },
+    error: { bg: 'bg-red-100', text: 'text-red-700', label: t.l1Analysis.status.error },
   };
   const { bg, text, label } = config[status];
   return (
@@ -58,7 +59,7 @@ const StatusBadge = ({ status }: { status: ModuleStatus }) => {
 };
 
 // Quote card component
-const QuoteCard = ({ quote, index }: { quote: Quote; index: number }) => {
+const QuoteCard = ({ quote, index, t }: { quote: Quote; index: number; t: ReturnType<typeof useLanguage>['t'] }) => {
   const [expanded, setExpanded] = useState(false);
 
   return (
@@ -74,7 +75,7 @@ const QuoteCard = ({ quote, index }: { quote: Quote; index: number }) => {
               onClick={() => setExpanded(!expanded)}
               className="text-xs text-indigo-600 hover:text-indigo-800 mt-1"
             >
-              {expanded ? '收起' : '展开'}
+              {expanded ? t.common.collapse : t.common.expand}
             </button>
           )}
           <div className="flex items-center gap-2 mt-2 flex-wrap">
@@ -87,7 +88,7 @@ const QuoteCard = ({ quote, index }: { quote: Quote; index: number }) => {
           </div>
           {quote.relevance && (
             <p className="text-xs text-gray-500 mt-1 italic">
-              相关性: {quote.relevance}
+              {t.l1Analysis.relevance}: {quote.relevance}
             </p>
           )}
         </div>
@@ -101,10 +102,12 @@ const StandardSection = ({
   standardKey,
   quotes,
   defaultExpanded = false,
+  t,
 }: {
   standardKey: L1StandardKey;
   quotes: Quote[];
   defaultExpanded?: boolean;
+  t: ReturnType<typeof useLanguage>['t'];
 }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const standard = L1_STANDARDS[standardKey];
@@ -131,10 +134,10 @@ const StandardSection = ({
       {expanded && (
         <div className="p-4 space-y-3 bg-white">
           {quotes.length === 0 ? (
-            <p className="text-sm text-gray-400 text-center py-4">暂无相关引用</p>
+            <p className="text-sm text-gray-400 text-center py-4">{t.l1Analysis.noRelatedQuotes}</p>
           ) : (
             quotes.map((quote, idx) => (
-              <QuoteCard key={idx} quote={quote} index={idx} />
+              <QuoteCard key={idx} quote={quote} index={idx} t={t} />
             ))
           )}
         </div>
@@ -148,6 +151,7 @@ export default function L1AnalysisModule({
   onSuccess,
   onError,
 }: L1AnalysisModuleProps) {
+  const { t } = useLanguage();
   const [status, setStatus] = useState<ModuleStatus>('idle');
   const [summary, setSummary] = useState<L1Summary | null>(null);
   const [loading, setLoading] = useState(false);
@@ -174,7 +178,7 @@ export default function L1AnalysisModule({
         const summaryResult = await analysisApi.getSummary(projectId);
         setSummary(summaryResult);
         setStatus('completed');
-        onSuccess?.(`L-1 分析完成: 分析了 ${data.completed} 个文档，找到 ${data.total_quotes_found} 条引用`);
+        onSuccess?.(`L-1 ${t.l1Analysis.status.completed}: ${data.completed} ${t.l1Analysis.documents}, ${t.l1Analysis.foundQuotes} ${data.total_quotes_found} ${t.l1Analysis.quotes}`);
       } catch (err) {
         console.error('Failed to generate summary:', err);
         setStatus('completed'); // Still mark as completed, summary might be available
@@ -255,8 +259,8 @@ export default function L1AnalysisModule({
     } catch (err) {
       console.error('L-1 analysis failed:', err);
       const errorMsg = err instanceof Error && err.message.includes('fetch')
-        ? '无法连接后端服务'
-        : 'L-1 分析启动失败';
+        ? t.backend.cannotConnect
+        : t.l1Analysis.analysisFailed;
       onError?.(errorMsg);
       setStatus('error');
     }
@@ -280,10 +284,10 @@ export default function L1AnalysisModule({
             <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center text-indigo-600">
               <AnalysisIcon />
             </div>
-            <h3 className="text-base font-semibold text-gray-900">L-1 关键原文引用分析</h3>
+            <h3 className="text-base font-semibold text-gray-900">{t.l1Analysis.title}</h3>
             {totalQuotes > 0 && (
               <span className="text-xs text-gray-500">
-                {totalQuotes} 条引用
+                {totalQuotes} {t.l1Analysis.quotes}
               </span>
             )}
           </div>
@@ -296,16 +300,16 @@ export default function L1AnalysisModule({
               {status === 'processing' ? (
                 <>
                   <div className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  分析中...
+                  {t.l1Analysis.analyzing}
                 </>
               ) : (
                 <>
                   <PlayIcon />
-                  {status === 'completed' ? '重新分析' : '开始分析'}
+                  {status === 'completed' ? t.l1Analysis.reanalyze : t.l1Analysis.startAnalysis}
                 </>
               )}
             </button>
-            <StatusBadge status={status} />
+            <StatusBadge status={status} t={t} />
           </div>
         </div>
       </div>
@@ -315,12 +319,12 @@ export default function L1AnalysisModule({
         {!projectId ? (
           <div className="text-center py-8 text-gray-400">
             <AnalysisIcon />
-            <p className="mt-2 text-sm">请先选择一个项目</p>
+            <p className="mt-2 text-sm">{t.l1Analysis.selectProject}</p>
           </div>
         ) : loading ? (
           <div className="flex items-center justify-center py-8">
             <div className="w-6 h-6 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
-            <span className="ml-2 text-sm text-gray-500">加载中...</span>
+            <span className="ml-2 text-sm text-gray-500">{t.common.loading}</span>
           </div>
         ) : status === 'processing' ? (
           <div className="py-6">
@@ -328,7 +332,7 @@ export default function L1AnalysisModule({
             <div className="mb-4">
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-gray-600">
-                  分析进度: {progress?.completed || 0}/{progress?.total || 0} 个文档
+                  {t.l1Analysis.progress}: {progress?.completed || 0}/{progress?.total || 0} {t.l1Analysis.documents}
                 </span>
                 <span className="text-indigo-600 font-medium">
                   {progress?.progress_percent || 0}%
@@ -348,7 +352,7 @@ export default function L1AnalysisModule({
                 <div className="flex items-center gap-2">
                   <div className="w-4 h-4 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin" />
                   <span className="text-sm text-indigo-700">
-                    正在分析: {progress.current_doc.exhibit_id} - {progress.current_doc.file_name}
+                    {t.l1Analysis.currentlyAnalyzing}: {progress.current_doc.exhibit_id} - {progress.current_doc.file_name}
                   </span>
                 </div>
               </div>
@@ -357,14 +361,14 @@ export default function L1AnalysisModule({
             {/* Stats so far */}
             {progress && progress.total_quotes_found > 0 && (
               <div className="text-center text-sm text-gray-500">
-                已找到 {progress.total_quotes_found} 条引用
+                {t.l1Analysis.foundQuotes} {progress.total_quotes_found} {t.l1Analysis.quotes}
               </div>
             )}
 
             {/* Errors */}
             {progress?.errors && progress.errors.length > 0 && (
               <div className="mt-3 text-sm text-red-600">
-                {progress.errors.length} 个文档分析失败
+                {progress.errors.length} {t.l1Analysis.docsFailed}
               </div>
             )}
           </div>
@@ -373,15 +377,15 @@ export default function L1AnalysisModule({
             <svg className="w-12 h-12 mx-auto text-gray-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            <p className="mt-3 text-sm">点击"开始分析"提取 L-1 关键原文引用</p>
-            <p className="mt-1 text-xs">将从 OCR 结果中自动识别符合 L-1 标准的关键引用</p>
+            <p className="mt-3 text-sm">{t.l1Analysis.clickToStart}</p>
+            <p className="mt-1 text-xs">{t.l1Analysis.autoExtract}</p>
           </div>
         ) : status === 'error' ? (
           <div className="text-center py-8 text-red-400">
             <svg className="w-12 h-12 mx-auto" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
-            <p className="mt-3 text-sm">分析失败，请重试</p>
+            <p className="mt-3 text-sm">{t.l1Analysis.retryMessage}</p>
           </div>
         ) : summary && totalQuotes > 0 ? (
           <div className="space-y-3">
@@ -409,13 +413,14 @@ export default function L1AnalysisModule({
                   standardKey={key}
                   quotes={getQuotesByStandard(key)}
                   defaultExpanded={idx === 0}
+                  t={t}
                 />
               ))}
             </div>
           </div>
         ) : (
           <div className="text-center py-8 text-gray-400">
-            <p className="text-sm">分析完成，但未找到符合条件的引用</p>
+            <p className="text-sm">{t.l1Analysis.noQuotes}</p>
           </div>
         )}
       </div>
