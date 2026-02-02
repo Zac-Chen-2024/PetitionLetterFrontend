@@ -23,6 +23,8 @@ export interface Translations {
     download: string;
     clear: string;
     noData: string;
+    selectAll?: string;
+    selectNone?: string;
   };
 
   // Project management
@@ -235,6 +237,46 @@ export interface Translations {
       others: string;
     };
     relationDetails: string;
+    // Deduplication
+    dedup?: {
+      title: string;
+      button: string;
+      merge: string;
+      suspicious: string;
+      reviewOrDelete: string;
+      foundSuggestions: string;
+      selected: string;
+      noSuggestions: string;
+      willMerge: string;
+      willDelete: string;
+      applySelected: string;
+      applying: string;
+      applied: string;
+      analysisFailed: string;
+      applyFailed: string;
+    };
+    // Snapshots/Rollback
+    snapshot?: {
+      history: string;
+      versions: string;
+      noSnapshots: string;
+      current: string;
+      original: string;
+      rolledBack: string;
+      rollbackFailed: string;
+    };
+    // Editing
+    edit?: {
+      rename: string;
+      delete: string;
+      confirmDeleteEntity: string;
+      confirmDeleteRelation: string;
+      entityDeleted: string;
+      entityRenamed: string;
+      relationDeleted: string;
+      deleteFailed: string;
+      renameFailed: string;
+    };
   };
 
   // Writing module

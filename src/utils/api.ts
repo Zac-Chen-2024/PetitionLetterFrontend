@@ -569,6 +569,43 @@ export interface RelationshipProgressResponse {
   result?: RelationshipGraph;
 }
 
+// Deduplication suggestion type
+export interface DeduplicationSuggestion {
+  id: string;
+  type: 'merge_entities' | 'suspicious_entity';
+  primary_id?: string;
+  primary_name?: string;
+  duplicate_ids?: string[];
+  duplicate_names?: string[];
+  entity_id?: string;
+  entity_name?: string;
+  reason: string;
+  action?: string;
+  confidence: number;
+}
+
+// Deduplication action type
+export interface DeduplicationAction {
+  type: 'merge' | 'delete';
+  primary_id?: string;
+  merge_ids?: string[];
+  entity_id?: string;
+}
+
+// Snapshot type
+export interface RelationshipSnapshot {
+  id: string;
+  version_id: string;
+  label: string;
+  created_at: string;
+  is_original: boolean;
+  parent_snap?: string;
+  stats: {
+    entity_count: number;
+    relation_count: number;
+  };
+}
+
 // Relationship Analysis APIs
 export const relationshipApi = {
   // SSE stream URL for relationship analysis progress
@@ -607,6 +644,126 @@ export const relationshipApi = {
       version_id: string | null;
       data: RelationshipGraph | null;
     }>(`/api/projects/${projectId}/relationship`),
+
+  // ========== 去重功能 ==========
+
+  // Run deduplication analysis (returns suggestions without modifying data)
+  deduplicate: (projectId: string) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      suggestions: DeduplicationSuggestion[];
+      entity_count: number;
+      relation_count: number;
+    }>(`/api/relationship/deduplicate/${projectId}`, { method: 'POST' }),
+
+  // Apply deduplication actions
+  applyDedup: (projectId: string, actions: DeduplicationAction[]) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      version_id: string;
+      merged_count: number;
+      deleted_count: number;
+      entity_count: number;
+      relation_count: number;
+    }>(`/api/relationship/apply-dedup/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({ actions }),
+    }),
+
+  // ========== 编辑功能 ==========
+
+  // Update entity (rename/change type)
+  updateEntity: (projectId: string, entityId: string, updates: { name?: string; type?: string }) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      entity_id: string;
+      version_id: string;
+    }>(`/api/relationship/entity/${projectId}/${entityId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(updates),
+    }),
+
+  // Delete entity (cascade deletes related relations)
+  deleteEntity: (projectId: string, entityId: string) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      entity_id: string;
+      version_id: string;
+      deleted_relations: number;
+    }>(`/api/relationship/entity/${projectId}/${entityId}`, {
+      method: 'DELETE',
+    }),
+
+  // Delete relation
+  deleteRelation: (projectId: string, fromEntity: string, toEntity: string, relationType: string) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      version_id: string;
+    }>(`/api/relationship/relation/${projectId}`, {
+      method: 'DELETE',
+      body: JSON.stringify({
+        from_entity: fromEntity,
+        to_entity: toEntity,
+        relation_type: relationType,
+      }),
+    }),
+
+  // Merge entities manually
+  mergeEntities: (projectId: string, primaryId: string, mergeIds: string[]) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      version_id: string;
+      merged_count: number;
+      entity_count: number;
+      relation_count: number;
+    }>(`/api/relationship/merge-entities/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        primary_id: primaryId,
+        merge_ids: mergeIds,
+      }),
+    }),
+
+  // ========== 快照/回滚功能 ==========
+
+  // List snapshots
+  listSnapshots: (projectId: string) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      snapshots: RelationshipSnapshot[];
+      current_snap: string | null;
+    }>(`/api/relationship/snapshots/${projectId}`),
+
+  // Create snapshot
+  createSnapshot: (projectId: string, label: string) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      snapshot: RelationshipSnapshot;
+    }>(`/api/relationship/snapshot/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({ label }),
+    }),
+
+  // Rollback to snapshot
+  rollback: (projectId: string, snapshotId: string) =>
+    fetchApi<{
+      success: boolean;
+      project_id: string;
+      rolled_back_to: string;
+      label: string;
+      version_id: string;
+    }>(`/api/relationship/rollback/${projectId}`, {
+      method: 'POST',
+      body: JSON.stringify({ snapshot_id: snapshotId }),
+    }),
 };
 
 // Entity names type

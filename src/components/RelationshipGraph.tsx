@@ -22,6 +22,9 @@ interface Relation {
 interface RelationshipGraphProps {
   entities: Entity[];
   relations: Relation[];
+  onDeleteEntity?: (entityId: string) => void;
+  onRenameEntity?: (entityId: string, newName: string) => void;
+  onDeleteRelation?: (fromEntity: string, toEntity: string, relationType: string) => void;
 }
 
 // Tab types for section filtering
@@ -156,28 +159,111 @@ const getLayerLabel = (layer: 'companies' | 'persons' | 'others', t: ReturnType<
   return labels[layer] || layer;
 };
 
+// Edit icon component
+const EditIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+  </svg>
+);
+
+// Delete icon component
+const DeleteIcon = () => (
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+  </svg>
+);
+
 // 实体节点组件
 interface EntityNodeProps {
   entity: Entity;
   t: ReturnType<typeof useLanguage>['t'];
+  onDelete?: () => void;
+  onRename?: (newName: string) => void;
 }
 
-const EntityNode = forwardRef<HTMLDivElement, EntityNodeProps>(({ entity, t }, ref) => {
+const EntityNode = forwardRef<HTMLDivElement, EntityNodeProps>(({ entity, t, onDelete, onRename }, ref) => {
+  const [isHovered, setIsHovered] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState(entity.name);
+
   const borderColor = getEntityBorderColor(entity.type);
   const bgColor = getEntityBgColor(entity.type);
   const typeLabel = getEntityTypeLabel(entity.type, t);
+
+  const handleSubmitRename = () => {
+    if (editName.trim() && editName !== entity.name && onRename) {
+      onRename(editName.trim());
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSubmitRename();
+    } else if (e.key === 'Escape') {
+      setEditName(entity.name);
+      setIsEditing(false);
+    }
+  };
 
   return (
     <div
       ref={ref}
       className={`relative px-4 py-3 rounded-lg border-2 ${borderColor} ${bgColor} min-w-[120px] max-w-[180px] z-10`}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       <span className="absolute -top-2.5 left-3 px-2 text-xs bg-white text-gray-500 whitespace-nowrap">
         {typeLabel}
       </span>
-      <p className="text-sm font-medium text-gray-800 text-center truncate">
-        {entity.name}
-      </p>
+
+      {isEditing ? (
+        <input
+          type="text"
+          value={editName}
+          onChange={(e) => setEditName(e.target.value)}
+          onBlur={handleSubmitRename}
+          onKeyDown={handleKeyDown}
+          className="text-sm font-medium text-gray-800 text-center w-full bg-white border border-gray-300 rounded px-1 py-0.5 focus:outline-none focus:border-rose-400"
+          autoFocus
+        />
+      ) : (
+        <p className="text-sm font-medium text-gray-800 text-center truncate">
+          {entity.name}
+        </p>
+      )}
+
+      {/* Hover toolbar */}
+      {isHovered && !isEditing && (onDelete || onRename) && (
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-white rounded-lg shadow-lg border border-gray-200 px-1 py-0.5 z-20">
+          {onRename && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setIsEditing(true);
+              }}
+              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+              title={t.relationship.edit?.rename || 'Rename'}
+            >
+              <EditIcon />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(t.relationship.edit?.confirmDeleteEntity || 'Delete this entity and all related relations?')) {
+                  onDelete();
+                }
+              }}
+              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+              title={t.relationship.edit?.delete || 'Delete'}
+            >
+              <DeleteIcon />
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 });
@@ -202,25 +288,52 @@ const LayerSection = ({ title, children }: LayerSectionProps) => (
   </div>
 );
 
+// Delete icon for relation
+const RelationDeleteIcon = () => (
+  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
+
 // 关系详情徽章
 interface RelationBadgeProps {
   relation: Relation;
   entities: Entity[];
   t: ReturnType<typeof useLanguage>['t'];
+  onDelete?: () => void;
 }
 
-const RelationBadge = ({ relation, entities, t }: RelationBadgeProps) => {
+const RelationBadge = ({ relation, entities, t, onDelete }: RelationBadgeProps) => {
+  const [isHovered, setIsHovered] = useState(false);
   const source = entities.find(e => e.id === relation.source_id);
   const target = entities.find(e => e.id === relation.target_id);
   if (!source || !target) return null;
 
   return (
-    <span className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 rounded text-xs text-gray-600">
+    <span
+      className="inline-flex items-center gap-1 px-2 py-1 bg-gray-50 rounded text-xs text-gray-600 relative group"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+    >
       <span className="font-medium">{source.name}</span>
       <span className="text-rose-500">→</span>
       <span className="text-rose-600">{getRelationLabel(relation.relation_type, t)}</span>
       <span className="text-rose-500">→</span>
       <span className="font-medium">{target.name}</span>
+      {isHovered && onDelete && (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            if (confirm(t.relationship.edit?.confirmDeleteRelation || 'Delete this relation?')) {
+              onDelete();
+            }
+          }}
+          className="ml-1 p-0.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+          title={t.relationship.edit?.delete || 'Delete'}
+        >
+          <RelationDeleteIcon />
+        </button>
+      )}
     </span>
   );
 };
@@ -308,13 +421,20 @@ const getSmartConnectionPath = (
   return { path, labelX, labelY };
 };
 
-export default function RelationshipGraph({ entities, relations }: RelationshipGraphProps) {
+export default function RelationshipGraph({
+  entities,
+  relations,
+  onDeleteEntity,
+  onRenameEntity,
+  onDeleteRelation,
+}: RelationshipGraphProps) {
   const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<GraphTab>('all');
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerRect, setContainerRect] = useState<DOMRect | null>(null);
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const [, forceUpdate] = useState({});
+  const [hoveredRelation, setHoveredRelation] = useState<number | null>(null);
 
   // Filter data based on active tab
   const { entities: filteredEntities, relations: filteredRelations } = useMemo(
@@ -525,6 +645,8 @@ export default function RelationshipGraph({ entities, relations }: RelationshipG
                       entity={entity}
                       t={t}
                       ref={(el) => registerNode(entity.id, el)}
+                      onDelete={onDeleteEntity ? () => onDeleteEntity(entity.id) : undefined}
+                      onRename={onRenameEntity ? (newName) => onRenameEntity(entity.id, newName) : undefined}
                     />
                   ))}
                 </LayerSection>
@@ -539,6 +661,8 @@ export default function RelationshipGraph({ entities, relations }: RelationshipG
                       entity={entity}
                       t={t}
                       ref={(el) => registerNode(entity.id, el)}
+                      onDelete={onDeleteEntity ? () => onDeleteEntity(entity.id) : undefined}
+                      onRename={onRenameEntity ? (newName) => onRenameEntity(entity.id, newName) : undefined}
                     />
                   ))}
                 </LayerSection>
@@ -553,6 +677,8 @@ export default function RelationshipGraph({ entities, relations }: RelationshipG
                       entity={entity}
                       t={t}
                       ref={(el) => registerNode(entity.id, el)}
+                      onDelete={onDeleteEntity ? () => onDeleteEntity(entity.id) : undefined}
+                      onRename={onRenameEntity ? (newName) => onRenameEntity(entity.id, newName) : undefined}
                     />
                   ))}
                 </LayerSection>
@@ -567,7 +693,13 @@ export default function RelationshipGraph({ entities, relations }: RelationshipG
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {filteredRelations.map((rel, idx) => (
-                    <RelationBadge key={idx} relation={rel} entities={entities} t={t} />
+                    <RelationBadge
+                      key={idx}
+                      relation={rel}
+                      entities={entities}
+                      t={t}
+                      onDelete={onDeleteRelation ? () => onDeleteRelation(rel.source_id, rel.target_id, rel.relation_type) : undefined}
+                    />
                   ))}
                 </div>
               </div>

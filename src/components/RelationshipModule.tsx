@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
-import { relationshipApi, RelationshipProgressResponse } from '@/utils/api';
+import { relationshipApi, RelationshipProgressResponse, DeduplicationSuggestion, DeduplicationAction, RelationshipSnapshot } from '@/utils/api';
 import { useSSE } from '@/hooks/useSSE';
 import { useLanguage } from '@/i18n/LanguageContext';
+import DeduplicationModal from './DeduplicationModal';
 
 // Dynamically import RelationshipGraph to avoid SSR issues
 const RelationshipGraph = dynamic(() => import('./RelationshipGraph'), {
@@ -90,6 +91,18 @@ const ListIcon = () => (
 const GraphIcon = () => (
   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+  </svg>
+);
+
+const DeduplicateIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+  </svg>
+);
+
+const HistoryIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
   </svg>
 );
 
@@ -325,6 +338,17 @@ export default function RelationshipModule({
   const [loading, setLoading] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>('graph');
 
+  // Deduplication state
+  const [dedupModalOpen, setDedupModalOpen] = useState(false);
+  const [dedupSuggestions, setDedupSuggestions] = useState<DeduplicationSuggestion[]>([]);
+  const [dedupLoading, setDedupLoading] = useState(false);
+  const [dedupApplying, setDedupApplying] = useState(false);
+
+  // Snapshot state
+  const [snapshots, setSnapshots] = useState<RelationshipSnapshot[]>([]);
+  const [currentSnap, setCurrentSnap] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+
   // SSE URL for progress monitoring
   const sseUrl = projectId ? relationshipApi.getStreamUrl(projectId) : null;
 
@@ -364,9 +388,11 @@ export default function RelationshipModule({
   useEffect(() => {
     if (projectId) {
       loadExistingAnalysis();
+      loadSnapshots();
     } else {
       setGraph(null);
       setStatus('idle');
+      setSnapshots([]);
     }
 
     return () => {
@@ -395,6 +421,115 @@ export default function RelationshipModule({
       setStatus('idle');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSnapshots = async () => {
+    if (!projectId) return;
+
+    try {
+      const result = await relationshipApi.listSnapshots(projectId);
+      setSnapshots(result.snapshots || []);
+      setCurrentSnap(result.current_snap);
+    } catch (err) {
+      console.error('Failed to load snapshots:', err);
+    }
+  };
+
+  // Deduplication handlers
+  const handleDeduplicate = async () => {
+    if (!projectId) return;
+
+    try {
+      setDedupLoading(true);
+      const result = await relationshipApi.deduplicate(projectId);
+      setDedupSuggestions(result.suggestions || []);
+      setDedupModalOpen(true);
+    } catch (err) {
+      console.error('Deduplication analysis failed:', err);
+      onError?.(t.relationship.dedup?.analysisFailed || 'Deduplication analysis failed');
+    } finally {
+      setDedupLoading(false);
+    }
+  };
+
+  const handleApplyDedup = async (actions: DeduplicationAction[]) => {
+    if (!projectId) return;
+
+    try {
+      setDedupApplying(true);
+      const result = await relationshipApi.applyDedup(projectId, actions);
+      setDedupModalOpen(false);
+      onSuccess?.(
+        t.relationship.dedup?.applied
+          ?.replace('{merged}', String(result.merged_count))
+          ?.replace('{deleted}', String(result.deleted_count)) ||
+        `Applied: ${result.merged_count} merged, ${result.deleted_count} deleted`
+      );
+      // Reload data
+      await loadExistingAnalysis();
+      await loadSnapshots();
+    } catch (err) {
+      console.error('Failed to apply deduplication:', err);
+      onError?.(t.relationship.dedup?.applyFailed || 'Failed to apply deduplication');
+    } finally {
+      setDedupApplying(false);
+    }
+  };
+
+  // Rollback handler
+  const handleRollback = async (snapshotId: string) => {
+    if (!projectId) return;
+
+    try {
+      const result = await relationshipApi.rollback(projectId, snapshotId);
+      onSuccess?.(t.relationship.snapshot?.rolledBack?.replace('{label}', result.label) || `Rolled back to: ${result.label}`);
+      setHistoryOpen(false);
+      await loadExistingAnalysis();
+      await loadSnapshots();
+    } catch (err) {
+      console.error('Rollback failed:', err);
+      onError?.(t.relationship.snapshot?.rollbackFailed || 'Rollback failed');
+    }
+  };
+
+  // Entity editing handlers
+  const handleDeleteEntity = async (entityId: string) => {
+    if (!projectId) return;
+
+    try {
+      await relationshipApi.deleteEntity(projectId, entityId);
+      onSuccess?.(t.relationship.edit?.entityDeleted || 'Entity deleted');
+      await loadExistingAnalysis();
+    } catch (err) {
+      console.error('Delete entity failed:', err);
+      onError?.(t.relationship.edit?.deleteFailed || 'Delete failed');
+    }
+  };
+
+  const handleRenameEntity = async (entityId: string, newName: string) => {
+    if (!projectId) return;
+
+    try {
+      await relationshipApi.updateEntity(projectId, entityId, { name: newName });
+      onSuccess?.(t.relationship.edit?.entityRenamed || 'Entity renamed');
+      await loadExistingAnalysis();
+    } catch (err) {
+      console.error('Rename entity failed:', err);
+      onError?.(t.relationship.edit?.renameFailed || 'Rename failed');
+    }
+  };
+
+  const handleDeleteRelation = async (fromEntity: string, toEntity: string, relationType: string) => {
+    if (!projectId) return;
+
+    try {
+      await relationshipApi.deleteRelation(projectId, fromEntity, toEntity, relationType);
+      onSuccess?.(t.relationship.edit?.relationDeleted || 'Relation deleted');
+      await loadExistingAnalysis();
+    } catch (err) {
+      console.error('Delete relation failed:', err);
+      onError?.(t.relationship.edit?.deleteFailed || 'Delete failed');
     }
   };
 
@@ -455,32 +590,115 @@ export default function RelationshipModule({
           <div className="flex items-center gap-2">
             {/* View mode toggle - only show when data exists */}
             {status === 'completed' && (entityCount > 0 || relationCount > 0) && (
-              <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+              <>
+                <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
+                  <button
+                    onClick={() => setViewMode('list')}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                      viewMode === 'list'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    title={t.relationship.viewMode.list}
+                  >
+                    <ListIcon />
+                    <span className="hidden sm:inline">{t.relationship.viewMode.list}</span>
+                  </button>
+                  <button
+                    onClick={() => setViewMode('graph')}
+                    className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
+                      viewMode === 'graph'
+                        ? 'bg-white text-gray-900 shadow-sm'
+                        : 'text-gray-500 hover:text-gray-700'
+                    }`}
+                    title={t.relationship.viewMode.graph}
+                  >
+                    <GraphIcon />
+                    <span className="hidden sm:inline">{t.relationship.viewMode.graph}</span>
+                  </button>
+                </div>
+
+                {/* Deduplication button */}
                 <button
-                  onClick={() => setViewMode('list')}
-                  className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
-                    viewMode === 'list'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                  title={t.relationship.viewMode.list}
+                  onClick={handleDeduplicate}
+                  disabled={dedupLoading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-100 text-purple-700 text-xs font-medium rounded-lg hover:bg-purple-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title={t.relationship.dedup?.title || 'Deduplicate'}
                 >
-                  <ListIcon />
-                  <span className="hidden sm:inline">{t.relationship.viewMode.list}</span>
+                  {dedupLoading ? (
+                    <div className="w-3 h-3 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <DeduplicateIcon />
+                  )}
+                  <span className="hidden sm:inline">{t.relationship.dedup?.button || 'Deduplicate'}</span>
                 </button>
-                <button
-                  onClick={() => setViewMode('graph')}
-                  className={`flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md transition-colors ${
-                    viewMode === 'graph'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                  title={t.relationship.viewMode.graph}
-                >
-                  <GraphIcon />
-                  <span className="hidden sm:inline">{t.relationship.viewMode.graph}</span>
-                </button>
-              </div>
+
+                {/* History dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setHistoryOpen(!historyOpen)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded-lg hover:bg-gray-200 transition-colors"
+                    title={t.relationship.snapshot?.history || 'History'}
+                  >
+                    <HistoryIcon />
+                    <span className="hidden sm:inline">{t.relationship.snapshot?.history || 'History'}</span>
+                    {snapshots.length > 0 && (
+                      <span className="bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded text-xs">
+                        {snapshots.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* History dropdown menu */}
+                  {historyOpen && (
+                    <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-lg border border-gray-200 z-20">
+                      <div className="px-3 py-2 border-b border-gray-100">
+                        <p className="text-xs font-medium text-gray-500">
+                          {t.relationship.snapshot?.versions || 'Versions'}
+                        </p>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {snapshots.length === 0 ? (
+                          <p className="px-3 py-4 text-sm text-gray-400 text-center">
+                            {t.relationship.snapshot?.noSnapshots || 'No snapshots'}
+                          </p>
+                        ) : (
+                          snapshots.map((snap) => (
+                            <button
+                              key={snap.id}
+                              onClick={() => handleRollback(snap.id)}
+                              disabled={snap.id === currentSnap}
+                              className={`w-full px-3 py-2 text-left hover:bg-gray-50 flex items-center justify-between ${
+                                snap.id === currentSnap ? 'bg-rose-50' : ''
+                              }`}
+                            >
+                              <div>
+                                <p className="text-sm font-medium text-gray-800">{snap.label}</p>
+                                <p className="text-xs text-gray-500">
+                                  {new Date(snap.created_at).toLocaleString()}
+                                </p>
+                                <p className="text-xs text-gray-400">
+                                  {snap.stats.entity_count} {t.relationship.entities}, {snap.stats.relation_count} {t.relationship.relations}
+                                </p>
+                              </div>
+                              {snap.id === currentSnap && (
+                                <span className="text-xs bg-rose-100 text-rose-700 px-2 py-0.5 rounded">
+                                  {t.relationship.snapshot?.current || 'Current'}
+                                </span>
+                              )}
+                              {snap.is_original && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
+                                  {t.relationship.snapshot?.original || 'Original'}
+                                </span>
+                              )}
+                            </button>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </>
             )}
             <button
               onClick={handleStartAnalysis}
@@ -554,6 +772,9 @@ export default function RelationshipModule({
               <RelationshipGraph
                 entities={graph.entities}
                 relations={graph.relations}
+                onDeleteEntity={handleDeleteEntity}
+                onRenameEntity={handleRenameEntity}
+                onDeleteRelation={handleDeleteRelation}
               />
             ) : (
               <>
@@ -610,6 +831,23 @@ export default function RelationshipModule({
           </div>
         )}
       </div>
+
+      {/* Deduplication Modal */}
+      <DeduplicationModal
+        isOpen={dedupModalOpen}
+        onClose={() => setDedupModalOpen(false)}
+        suggestions={dedupSuggestions}
+        onApply={handleApplyDedup}
+        isApplying={dedupApplying}
+      />
+
+      {/* Click outside to close history dropdown */}
+      {historyOpen && (
+        <div
+          className="fixed inset-0 z-10"
+          onClick={() => setHistoryOpen(false)}
+        />
+      )}
     </div>
   );
 }

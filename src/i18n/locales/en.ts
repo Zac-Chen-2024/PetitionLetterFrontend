@@ -21,6 +21,8 @@ export const en: Translations = {
     download: 'Download',
     clear: 'Clear',
     noData: 'No data',
+    selectAll: 'Select all',
+    selectNone: 'Select none',
   },
 
   // Project management
@@ -233,6 +235,46 @@ export const en: Translations = {
       others: 'Other',
     },
     relationDetails: 'Relation Details',
+    // Deduplication
+    dedup: {
+      title: 'Deduplication Check',
+      button: 'Deduplicate',
+      merge: 'Merge',
+      suspicious: 'Suspicious',
+      reviewOrDelete: 'Review or delete',
+      foundSuggestions: 'Found {count} suggestions',
+      selected: '{count} selected',
+      noSuggestions: 'No duplicates found',
+      willMerge: 'Will merge {count} entities',
+      willDelete: 'Will delete {count} entities',
+      applySelected: 'Apply Selected',
+      applying: 'Applying...',
+      applied: 'Applied: {merged} merged, {deleted} deleted',
+      analysisFailed: 'Deduplication analysis failed',
+      applyFailed: 'Failed to apply deduplication',
+    },
+    // Snapshots/Rollback
+    snapshot: {
+      history: 'History',
+      versions: 'Versions',
+      noSnapshots: 'No snapshots',
+      current: 'Current',
+      original: 'Original',
+      rolledBack: 'Rolled back to: {label}',
+      rollbackFailed: 'Rollback failed',
+    },
+    // Editing
+    edit: {
+      rename: 'Rename',
+      delete: 'Delete',
+      confirmDeleteEntity: 'Delete this entity and all related relations?',
+      confirmDeleteRelation: 'Delete this relation?',
+      entityDeleted: 'Entity deleted',
+      entityRenamed: 'Entity renamed',
+      relationDeleted: 'Relation deleted',
+      deleteFailed: 'Delete failed',
+      renameFailed: 'Rename failed',
+    },
   },
 
   // Writing module

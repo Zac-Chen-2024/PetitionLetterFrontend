@@ -21,6 +21,8 @@ export const zh: Translations = {
     download: '下载',
     clear: '清除',
     noData: '暂无数据',
+    selectAll: '全选',
+    selectNone: '取消全选',
   },
 
   // Project management
@@ -233,6 +235,46 @@ export const zh: Translations = {
       others: '其他',
     },
     relationDetails: '关系详情',
+    // 去重功能
+    dedup: {
+      title: '去重检查',
+      button: '去重检查',
+      merge: '合并',
+      suspicious: '可疑',
+      reviewOrDelete: '请审核或删除',
+      foundSuggestions: '发现 {count} 条建议',
+      selected: '已选 {count} 条',
+      noSuggestions: '未发现重复项',
+      willMerge: '将合并 {count} 个实体',
+      willDelete: '将删除 {count} 个实体',
+      applySelected: '应用选中',
+      applying: '应用中...',
+      applied: '已应用：{merged} 个合并，{deleted} 个删除',
+      analysisFailed: '去重分析失败',
+      applyFailed: '应用去重失败',
+    },
+    // 快照/回滚功能
+    snapshot: {
+      history: '历史版本',
+      versions: '版本列表',
+      noSnapshots: '暂无快照',
+      current: '当前',
+      original: '原始',
+      rolledBack: '已回滚到：{label}',
+      rollbackFailed: '回滚失败',
+    },
+    // 编辑功能
+    edit: {
+      rename: '重命名',
+      delete: '删除',
+      confirmDeleteEntity: '确定删除此实体及其所有相关关系吗？',
+      confirmDeleteRelation: '确定删除此关系吗？',
+      entityDeleted: '实体已删除',
+      entityRenamed: '实体已重命名',
+      relationDeleted: '关系已删除',
+      deleteFailed: '删除失败',
+      renameFailed: '重命名失败',
+    },
   },
 
   // Writing module
